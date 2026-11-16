@@ -112,7 +112,7 @@ func (l *DefaultLock) Write(ctx context.Context, task func(ctx context.Context))
 	l.nextTicket++
 	// Wait for our turn, the current write holder and all active readers.
 	// We always proceed even if our context was cancelled by a newer Write call:
-	// do must run so that document mutations are never silently dropped.
+	// task must run so that document mutations are never silently dropped.
 	for l.readers > 0 || l.writing || ticket != l.servingTicket {
 		l.cond.Wait()
 	}

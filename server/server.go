@@ -217,6 +217,8 @@ func (s *DefaultLanguageServer) Initialized(ctx context.Context, params *lsp.Ini
 		go lock.Write(initializeCtx, func(writeCtx context.Context) {
 			close(acquired)
 			log.Print("Initializer running...")
+			// Never cancel the workspace initialization, otherwise we might skip loading
+			// files from the workspace into documents.
 			if err := initializer.Initialize(initializeCtx, workspaceFolders); err != nil {
 				// Failed, continue with workspace build anyway
 				log.Printf("Initializer failed: %v", err)

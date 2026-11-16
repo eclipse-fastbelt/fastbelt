@@ -90,6 +90,31 @@ func (s *DefaultDocumentUpdater) Update(ctx context.Context, changed []textdoc.H
 	}
 }
 
+// UpdateInLock is a utility function to call the [DocumentUpdater.Update] method within the
+// [Lock.Write] context. Both services are retrieved from the supplied service container.
+// The function calls apply within a locked write context and returns as soon as the update starts.
+// This will run the workspace update concurrently without blocking the language server for any
+// incoming notifications or updates.
+// If a notify function is returned from apply, it will be called right after the function returns.
+//
+// The update will be cancelled if the specified context is cancelled.
+func UpdateInLock(ctx context.Context, sc *service.Container, apply func(ctx context.Context) (changed []textdoc.Handle, deleted []core.URI, notify func())) {
+	lock := sc.MustGet[Lock]()
+	applied := make(chan struct{})
+	go lock.Write(ctx, func(writeCtx context.Context) {
+		changed, deleted, notify := func() ([]textdoc.Handle, []core.URI, func()) {
+			defer close(applied)
+			return apply(writeCtx)
+		}()
+		if notify != nil {
+			notify()
+		}
+		updater := sc.MustGet[DocumentUpdater]()
+		updater.Update(writeCtx, changed, deleted)
+	})
+	<-applied
+}
+
 // DocumentChangeImpact reports whether a document should be relinked in response
 // to changes in other documents.
 type DocumentChangeImpact interface {

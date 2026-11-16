@@ -98,34 +98,6 @@ func NewDefaultDocumentSynchronizer(sc *service.Container) DocumentSynchronizer 
 	return &DefaultDocumentSynchronizer{sc: sc}
 }
 
-// write runs apply under the [workspace.Lock] write lock and returns as soon
-// as apply has returned; the rest of the write continues in the background.
-//
-// apply performs the text change. It reports the handles it changed and,
-// optionally, a notify function that runs the registered handlers once the
-// notification has returned. Every write ends with a call to
-// [workspace.DocumentUpdater.Update], even when apply changed nothing:
-// acquiring the write lock cancels the running build and resets the workspace
-// state, so a write that skipped the update would leave the documents of the
-// cancelled build incomplete.
-func (s *DefaultDocumentSynchronizer) write(apply func(ctx context.Context) (changed []textdoc.Handle, notify func())) {
-	lock := s.sc.MustGet[workspace.Lock]()
-	applied := make(chan struct{})
-	// The write gets a fresh context, because the notification's context ends
-	// when the notification returns.
-	go lock.Write(context.Background(), func(ctx context.Context) {
-		changed, notify := func() ([]textdoc.Handle, func()) {
-			defer close(applied)
-			return apply(ctx)
-		}()
-		if notify != nil {
-			notify()
-		}
-		s.sc.MustGet[workspace.DocumentUpdater]().Update(ctx, changed, nil)
-	})
-	<-applied
-}
-
 // notify calls the handlers with a change event for doc. handlers points to
 // one of the handler lists of s, which is read under s.mu.
 func (s *DefaultDocumentSynchronizer) notify(ctx context.Context, handlers *[]TextDocumentChangeHandler, doc *textdoc.Overlay) {
@@ -137,7 +109,7 @@ func (s *DefaultDocumentSynchronizer) notify(ctx context.Context, handlers *[]Te
 }
 
 func (s *DefaultDocumentSynchronizer) DidOpen(ctx context.Context, params *lsp.DidOpenTextDocumentParams) {
-	s.write(func(writeCtx context.Context) ([]textdoc.Handle, func()) {
+	workspace.UpdateInLock(context.Background(), s.sc, func(writeCtx context.Context) ([]textdoc.Handle, []core.URI, func()) {
 		textdocStore := s.sc.MustGet[textdoc.Store]()
 		uri := core.NormalizeURI(params.TextDocument.URI)
 		existing := textdocStore.Get(uri)
@@ -157,9 +129,9 @@ func (s *DefaultDocumentSynchronizer) DidOpen(ctx context.Context, params *lsp.D
 			// Note: Language clients will send didClose+didOpen with a different
 			// language ID if the user changes it - this will correctly generate
 			// a new document and start a new build.
-			return nil, notify
+			return nil, nil, notify
 		}
-		return []textdoc.Handle{doc}, notify
+		return []textdoc.Handle{doc}, nil, notify
 	})
 }
 
@@ -173,12 +145,12 @@ func (s *DefaultDocumentSynchronizer) DidChange(ctx context.Context, params *lsp
 	if len(params.ContentChanges) == 0 {
 		return
 	}
-	s.write(func(writeCtx context.Context) ([]textdoc.Handle, func()) {
+	workspace.UpdateInLock(context.Background(), s.sc, func(writeCtx context.Context) ([]textdoc.Handle, []core.URI, func()) {
 		textdocStore := s.sc.MustGet[textdoc.Store]()
 		uri := core.NormalizeURI(params.TextDocument.URI)
 		doc := textdocStore.GetOverlay(uri)
 		if doc == nil {
-			return nil, nil
+			return nil, nil, nil
 		}
 
 		oldContent := doc.Content()
@@ -186,13 +158,13 @@ func (s *DefaultDocumentSynchronizer) DidChange(ctx context.Context, params *lsp
 			// Log the error and carry on - this is a notification, not a request
 			// Note: At this point, client and server are desynchronized - but the client is at fault here
 			log.Printf("failed to update document: %v", err)
-			return nil, nil
+			return nil, nil, nil
 		}
 		if bytes.Equal(oldContent, doc.Content()) {
 			// Document hasn't actually changed, no need to notify handlers
-			return nil, nil
+			return nil, nil, nil
 		}
-		return []textdoc.Handle{doc}, func() { s.notify(writeCtx, &s.didChangeHandlers, doc) }
+		return []textdoc.Handle{doc}, nil, func() { s.notify(writeCtx, &s.didChangeHandlers, doc) }
 	})
 }
 
@@ -203,7 +175,7 @@ func (s *DefaultDocumentSynchronizer) OnDidChange(handler TextDocumentChangeHand
 }
 
 func (s *DefaultDocumentSynchronizer) DidClose(ctx context.Context, params *lsp.DidCloseTextDocumentParams) {
-	s.write(func(writeCtx context.Context) ([]textdoc.Handle, func()) {
+	workspace.UpdateInLock(context.Background(), s.sc, func(writeCtx context.Context) ([]textdoc.Handle, []core.URI, func()) {
 		textdocStore := s.sc.MustGet[textdoc.Store]()
 		uri := core.NormalizeURI(params.TextDocument.URI)
 		// The handlers run before the overlay is removed, so the notification
@@ -212,9 +184,9 @@ func (s *DefaultDocumentSynchronizer) DidClose(ctx context.Context, params *lsp.
 			s.notify(writeCtx, &s.didCloseHandlers, existing)
 		}
 		textdocStore.RemoveOverlay(uri)
-		// TODO: Maybe do some more work here - a closed file might trigger a new workspace build
+		// TODO: Maybe do some more work here - a closed document could no longer exist.
 		// see also https://github.com/eclipse-fastbelt/fastbelt/issues/185
-		return nil, nil
+		return nil, nil, nil
 	})
 }
 
