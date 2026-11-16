@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io/fs"
 	"log"
+	"slices"
 	"sync"
 
 	core "typefox.dev/fastbelt"
@@ -69,6 +70,8 @@ type TextDocumentWillSaveWaitUntilHandler func(ctx context.Context, event *TextD
 // DidClose additionally checks the closed document against the
 // [workspace.FileSystem]: if it does not exist there, it is removed from the
 // [textdoc.Store] and reported to the [workspace.DocumentUpdater] as deleted.
+// Documents with a scheme of the [TextDocumentContentProvider] are exempt:
+// they only exist in the language server and are kept.
 //
 // Thread Safety: All methods are safe for concurrent use.
 type DocumentSynchronizer interface {
@@ -197,12 +200,21 @@ func (s *DefaultDocumentSynchronizer) DidClose(ctx context.Context, params *lsp.
 		// or a file that was deleted while it was open. Remove it from the
 		// workspace, so that other documents no longer link against it.
 		coreURI := core.ParseURI(string(uri))
-		if !s.missingInFileSystem(writeCtx, coreURI) {
+		if s.servedByContentProvider(coreURI) || !s.missingInFileSystem(writeCtx, coreURI) {
 			return nil, nil, nil
 		}
 		textdocStore.RemoveFile(uri)
 		return nil, []core.URI{coreURI}, nil
 	})
+}
+
+// servedByContentProvider reports whether uri has one of the schemes of the
+// [TextDocumentContentProvider]. Such a document only exists in the language
+// server, which owns it: the client merely displays it, so closing it must
+// not remove it, although the [workspace.FileSystem] does not know it.
+func (s *DefaultDocumentSynchronizer) servedByContentProvider(uri core.URI) bool {
+	provider, err := s.sc.Get[TextDocumentContentProvider]()
+	return err == nil && slices.Contains(provider.Schemes(), uri.Scheme())
 }
 
 // missingInFileSystem reports whether the [workspace.FileSystem] positively
