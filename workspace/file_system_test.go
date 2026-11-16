@@ -322,6 +322,38 @@ func TestFileSystemRegisterProviderReplaces(t *testing.T) {
 	assert.False(t, fs.Exists(ctx, uri))
 }
 
+// uncomparableProvider is a provider whose values cannot be compared with ==.
+type uncomparableProvider struct {
+	FileSystemProvider
+	_ []int
+}
+
+func TestFileSystemUnregisterIdentifiesRegistration(t *testing.T) {
+	ctx := context.Background()
+	uri := core.ParseURI("memory:///x.txt")
+
+	// Distinct zero-size providers may share an address: unregistering the
+	// replaced one must still keep its replacement.
+	fs := NewDefaultFileSystem()
+	unregisterFirst := fs.RegisterProvider("file", NewDiskFileSystemProvider())
+	fs.RegisterProvider("file", NewDiskFileSystemProvider())
+	unregisterFirst()
+	assert.True(t, fs.Exists(ctx, core.FileURI(t.TempDir())))
+
+	// The same provider registered twice: the first registration was replaced.
+	files := NewVirtualFileSystemProvider()
+	require.NoError(t, files.WriteFile(uri, nil))
+	unregisterFirst = fs.RegisterProvider("memory", files)
+	fs.RegisterProvider("memory", files)
+	unregisterFirst()
+	assert.True(t, fs.Exists(ctx, uri))
+
+	// Providers of an uncomparable type can be unregistered.
+	unregister := fs.RegisterProvider("memory", uncomparableProvider{FileSystemProvider: files})
+	assert.NotPanics(t, unregister)
+	assert.False(t, fs.Exists(ctx, uri))
+}
+
 func TestDiskFileSystemReadsLocalFiles(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

@@ -34,7 +34,8 @@ type DocumentUpdater interface {
 	// the build is cut short when ctx is cancelled by a newer write, and that
 	// write is then responsible for building the documents left incomplete.
 	Update(ctx context.Context, changed []textdoc.Handle, deleted []core.URI)
-	// OnUpdate registers a [DocumentUpdateListener] that is called for every update.
+	// OnUpdate registers a [DocumentUpdateListener] that is called for every
+	// update that changes or deletes a document.
 	// The returned function removes the listener again; calling it more than
 	// once has no effect. An update that is already notifying its listeners
 	// may still call a listener that was removed in the meantime.
@@ -57,8 +58,9 @@ type DefaultDocumentUpdater struct {
 	listeners []*DocumentUpdateListener
 }
 
-// OnUpdate registers a [DocumentUpdateListener] that is called for every update. The returned
-// function removes the listener again.
+// OnUpdate registers a [DocumentUpdateListener] that is called for every update
+// that changes or deletes a document. The returned function removes the
+// listener again.
 func (s *DefaultDocumentUpdater) OnUpdate(listener DocumentUpdateListener) func() {
 	// Functions are not comparable: the pointer identifies this registration,
 	// also if the same listener is registered more than once.

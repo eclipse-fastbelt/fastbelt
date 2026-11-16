@@ -112,13 +112,21 @@ func walkDir(ctx context.Context, fs FileSystem, entry DirEntry, fn func(DirEntr
 // their own synchronization.
 type DefaultFileSystem struct {
 	mu        sync.RWMutex
-	providers map[string]FileSystemProvider
+	providers map[string]*providerRegistration
+}
+
+// providerRegistration is a single call of [DefaultFileSystem.RegisterProvider].
+// Its pointer identifies the registration: providers themselves cannot be
+// compared reliably, as they may be of an uncomparable type, be registered
+// more than once, or be distinct zero-size values that share an address.
+type providerRegistration struct {
+	provider FileSystemProvider
 }
 
 // NewDefaultFileSystem creates a [FileSystem] without any registered providers.
 func NewDefaultFileSystem() *DefaultFileSystem {
 	return &DefaultFileSystem{
-		providers: make(map[string]FileSystemProvider),
+		providers: make(map[string]*providerRegistration),
 	}
 }
 
@@ -132,13 +140,14 @@ func NewDiskFileSystem() *DefaultFileSystem {
 
 // RegisterProvider registers the [FileSystemProvider] for all URIs with the given scheme.
 func (s *DefaultFileSystem) RegisterProvider(scheme string, provider FileSystemProvider) func() {
+	registration := &providerRegistration{provider: provider}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.providers[scheme] = provider
+	s.providers[scheme] = registration
 	return func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.providers[scheme] == provider {
+		if s.providers[scheme] == registration {
 			delete(s.providers, scheme)
 		}
 	}
@@ -148,12 +157,12 @@ func (s *DefaultFileSystem) RegisterProvider(scheme string, provider FileSystemP
 // The returned error wraps [fs.ErrNotExist] if there is none.
 func (s *DefaultFileSystem) provider(uri core.URI) (FileSystemProvider, error) {
 	s.mu.RLock()
-	provider, ok := s.providers[uri.Scheme()]
+	registration, ok := s.providers[uri.Scheme()]
 	s.mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("no file system provider for scheme %q: %w", uri.Scheme(), fs.ErrNotExist)
 	}
-	return provider, nil
+	return registration.provider, nil
 }
 
 // Exists checks if the given URI exists in the file system.
