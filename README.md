@@ -2,9 +2,9 @@
 
 Fastbelt is a high-performance DSL toolkit for Go with a parser generator and Language Server Protocol (LSP) support.
 
-It is designed for language tooling that needs low latency and good throughput on large workspaces.
-
-For background and benchmarks, see the [Fastbelt introduction](https://www.typefox.io/blog/fastbelt-introduction/) blog post.
+It is designed for language tooling that needs low latency and high throughput on large workspaces.
+According our benchmarks, Fastbelt is between one and two orders of magnitude faster than other state-of-the-art frameworks, such as [Langium](https://langium.org/) and [Xtext](https://eclipse.dev/Xtext/).
+For further background and benchmarks, see the [Fastbelt introduction](https://www.typefox.io/blog/fastbelt-introduction/) blog post.
 
 ## Installation
 
@@ -49,21 +49,6 @@ Add a directive to some file in your module (assumes install with `go tool`):
 //go:generate go tool typefox.dev/fastbelt/cmd/fastbelt generate ./grammar.fb -o ./
 ```
 
-## Railroad diagrams
-
-Pass `--railroad` to `generate` to also produce railroad syntax diagrams for your grammar:
-
-```sh
-fastbelt generate ./grammar.fb -o ./ --railroad
-```
-
-This writes one `<RuleName>.svg` per parser, composite, and infix rule to a `railroad/`
-subdirectory, plus an `index.md` linking all of them in grammar order. Diagrams of
-renamed or deleted rules are not removed from `railroad/`.
-
-The Fastbelt VS Code extension shows the same diagram when hovering a rule name in a
-`.fb` file.
-
 ## Scaffolding
 
 To bootstrap a **new Go module** for a language, run:
@@ -86,9 +71,13 @@ To add a language package to an **existing** module, omit `--module` and use `--
 
 ## Examples
 
-A minimal state machine example is available in `examples/statemachine`.
+This repository contains examples in the `examples` directory. Currently, this includes:
 
-For editor integration, see the VS Code extension in `internal/vscode-extensions/statemachine`.
+1. `examples/statemachine` is a simple example showing an implementation of Martin Fowler's [State Machine DSL]().
+   It contains a showcase of how to compile a Fastbelt based language server into WebAssembly.
+2. `examples/arithmetics` shows how to write a language that contains complex infix expressions.
+
+For editor integration, see the VS Code extensions in `internal/vscode-extensions/`.
 
 ## Contributing
 
@@ -97,3 +86,26 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution guidelines.
 ## License
 
 Fastbelt is licensed under the [MIT License](./LICENSE).
+
+## Citation
+
+You can cite Fastbelt using the following bibtex entry:
+
+```
+@inproceedings{
+    10.1145/3837062.3838878,
+    author = {Sujew, Mark and Smyth, Steven},
+    title = {Fastbelt: An Architecture for Efficient Language Engineering},
+    year = {2026},
+    isbn = {9798400729034},
+    publisher = {Association for Computing Machinery},
+    address = {New York, NY, USA},
+    url = {https://doi.org/10.1145/3837062.3838878},
+    doi = {10.1145/3837062.3838878},
+    booktitle = {Proceedings of the ACM/IEEE 29th International Conference on Model Driven Engineering Languages and Systems},
+    pages = {249–253},
+    numpages = {5},
+    location = {M{\'a}laga, Spain},
+    series = {MODELS Companion '26}
+}
+```
