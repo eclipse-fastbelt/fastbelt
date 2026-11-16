@@ -67,11 +67,14 @@ type TextDocumentWillSaveWaitUntilHandler func(ctx context.Context, event *TextD
 // including DidClose and notifications that leave the text unchanged, because
 // acquiring the write lock cancels the build that was running.
 //
-// DidClose additionally checks the closed document against the
-// [workspace.FileSystem]: if it does not exist there, it is removed from the
-// [textdoc.Store] and reported to the [workspace.DocumentUpdater] as deleted.
-// Documents with a scheme of the [TextDocumentContentProvider] are exempt:
-// they only exist in the language server and are kept.
+// DidClose additionally reverts the closed document to its content in the
+// [workspace.FileSystem], which discards changes that were not saved. The
+// content is stored as [textdoc.File] in the [textdoc.Store]. If the document
+// does not exist in the file system, it is removed from the [textdoc.Store]
+// and reported to the [workspace.DocumentUpdater] as deleted; if it cannot be
+// read for another reason, it is kept as it is. Documents with a scheme of
+// the [TextDocumentContentProvider] are exempt: they only exist in the
+// language server and are kept.
 //
 // Thread Safety: All methods are safe for concurrent use.
 type DocumentSynchronizer interface {
@@ -195,17 +198,54 @@ func (s *DefaultDocumentSynchronizer) DidClose(ctx context.Context, params *lsp.
 		// waits for them.
 		s.notify(writeCtx, &s.didCloseHandlers, existing)
 		textdocStore.RemoveOverlay(uri)
-		// The editor buffer was the only source of a document that does not
-		// (or no longer) exist in the file system, such as an untitled document
-		// or a file that was deleted while it was open. Remove it from the
-		// workspace, so that other documents no longer link against it.
 		coreURI := core.ParseURI(string(uri))
-		if s.servedByContentProvider(coreURI) || !s.missingInFileSystem(writeCtx, coreURI) {
+		if s.servedByContentProvider(coreURI) {
 			return nil, nil, nil
 		}
-		textdocStore.RemoveFile(uri)
-		return nil, []core.URI{coreURI}, nil
+		// With the editor buffer gone, the file system holds the truth again.
+		// The client does not have to revert unsaved changes before closing.
+		content, err := s.readFile(writeCtx, coreURI)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			// The editor buffer was the only source of the document, such as
+			// an untitled document or a file that was deleted while it was
+			// open. Remove it from the workspace, so that other documents no
+			// longer link against it.
+			textdocStore.RemoveFile(uri)
+			return nil, []core.URI{coreURI}, nil
+		case err != nil:
+			// The state of the file is unknown, keep the document as it is.
+			if !errors.Is(err, errNoFileSystem) {
+				log.Printf("failed to read closed document %s: %v", uri, err)
+			}
+			return nil, nil, nil
+		}
+		// Always refresh the stored file: it is the snapshot from the workspace
+		// load and does not see what the editor saved in the meantime.
+		file := textdoc.NewFile(uri, existing.LanguageID(), 0, string(content))
+		textdocStore.AddFile(file)
+		if bytes.Equal(content, existing.Content()) {
+			// Nothing was left unsaved, keep the document that is already built.
+			return nil, nil, nil
+		}
+		return []textdoc.Handle{file}, nil, nil
 	})
+}
+
+// errNoFileSystem is returned by readFile if no [workspace.FileSystem] is registered.
+var errNoFileSystem = errors.New("no file system registered")
+
+// readFile reads uri through the [workspace.FileSystem]. The error wraps
+// [fs.ErrNotExist] only if the file system positively states that uri does
+// not exist; any other error, such as missing permissions, leaves that open.
+func (s *DefaultDocumentSynchronizer) readFile(ctx context.Context, uri core.URI) ([]byte, error) {
+	fileSystem, err := s.sc.Get[workspace.FileSystem]()
+	if err != nil {
+		return nil, errNoFileSystem
+	}
+	// The write's context is cancelled as soon as a newer write arrives, which
+	// must not turn into a different answer.
+	return fileSystem.ReadFile(context.WithoutCancel(ctx), uri)
 }
 
 // servedByContentProvider reports whether uri has one of the schemes of the
@@ -215,21 +255,6 @@ func (s *DefaultDocumentSynchronizer) DidClose(ctx context.Context, params *lsp.
 func (s *DefaultDocumentSynchronizer) servedByContentProvider(uri core.URI) bool {
 	provider, err := s.sc.Get[TextDocumentContentProvider]()
 	return err == nil && slices.Contains(provider.Schemes(), uri.Scheme())
-}
-
-// missingInFileSystem reports whether the [workspace.FileSystem] positively
-// states that uri does not exist. It returns false if no file system is
-// registered or the lookup fails for another reason, such as missing
-// permissions: a document is only dropped when it is known to be gone.
-func (s *DefaultDocumentSynchronizer) missingInFileSystem(ctx context.Context, uri core.URI) bool {
-	fileSystem, err := s.sc.Get[workspace.FileSystem]()
-	if err != nil {
-		return false
-	}
-	// The write's context is cancelled as soon as a newer write arrives, which
-	// must not turn into a different answer.
-	_, err = fileSystem.Stat(context.WithoutCancel(ctx), uri)
-	return errors.Is(err, fs.ErrNotExist)
 }
 
 func (s *DefaultDocumentSynchronizer) OnDidClose(handler TextDocumentChangeHandler) {

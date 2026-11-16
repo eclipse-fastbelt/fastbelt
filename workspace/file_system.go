@@ -124,7 +124,7 @@ type providerRegistration struct {
 }
 
 // NewDefaultFileSystem creates a [FileSystem] without any registered providers.
-func NewDefaultFileSystem() *DefaultFileSystem {
+func NewDefaultFileSystem() FileSystem {
 	return &DefaultFileSystem{
 		providers: make(map[string]*providerRegistration),
 	}
@@ -132,7 +132,7 @@ func NewDefaultFileSystem() *DefaultFileSystem {
 
 // NewDiskFileSystem creates a [FileSystem] that serves the "file" scheme from the local disk
 // through a [DiskFileSystemProvider].
-func NewDiskFileSystem() *DefaultFileSystem {
+func NewDiskFileSystem() FileSystem {
 	s := NewDefaultFileSystem()
 	s.RegisterProvider(core.FileScheme, NewDiskFileSystemProvider())
 	return s

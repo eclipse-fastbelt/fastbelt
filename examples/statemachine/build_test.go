@@ -196,3 +196,32 @@ func TestBuildStepListenersRunAfterCancellation(t *testing.T) {
 	assert.True(t, doc.Document.State().Has(fastbelt.DocStateValidated), "validation finished before the cancellation")
 	assert.Equal(t, 1, called, "the listener was skipped for a validated document")
 }
+
+// TestCloseWithUnsavedChangesRevertsDocument covers closing an editor with
+// "Don't Save": the workspace must not keep the text that was never saved.
+func TestCloseWithUnsavedChangesRevertsDocument(t *testing.T) {
+	const saved = "statemachine Saved"
+	files := workspace.NewVirtualFileSystemProvider()
+	uri := lsp.DocumentURI("file:///ws/example.statemachine")
+	coreURI := fastbelt.ParseURI(string(uri))
+	require.NoError(t, files.WriteFile(coreURI, []byte(saved)))
+
+	sc := CreateLspServices(nil)
+	// Serve the "file" scheme from memory instead of the local disk.
+	sc.MustGet[workspace.FileSystem]().RegisterProvider(fastbelt.FileScheme, files)
+	f := &syncFixture{
+		t:            t,
+		synchronizer: sc.MustGet[server.DocumentSynchronizer](),
+		lock:         sc.MustGet[workspace.Lock](),
+		docs:         sc.MustGet[workspace.DocumentManager](),
+	}
+
+	f.open(uri, saved)
+	f.insert(uri, 2, "statemachine Unsaved ")
+	f.requireBuilt(uri)
+	require.NotEqual(t, saved, f.docs.Get(coreURI).TextDoc.Text(nil))
+
+	f.close(uri)
+	f.requireBuilt(uri)
+	assert.Equal(t, saved, f.docs.Get(coreURI).TextDoc.Text(nil))
+}

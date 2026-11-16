@@ -6,6 +6,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -187,16 +188,19 @@ func (f *closeFixture) openAndClose(t *testing.T, uri lsp.DocumentURI) updateCal
 	return calls[0]
 }
 
-func TestTextDocuments_CloseKeepsExistingFile(t *testing.T) {
+// Closing a document with unsaved changes reverts it to the content of the
+// file system: the client does not have to revert the changes itself.
+func TestTextDocuments_CloseRevertsUnsavedChanges(t *testing.T) {
 	f := newCloseFixture()
 	uri := lsp.DocumentURI("file:///ws/test.txt")
 	if err := f.files.WriteFile(core.ParseURI(string(uri)), []byte("on disk")); err != nil {
 		t.Fatal(err)
 	}
 	store := f.sc.MustGet[textdoc.Store]()
-	store.AddFile(textdoc.NewFile(uri, "plaintext", 0, "on disk"))
+	// The snapshot of the workspace load is older than the file.
+	store.AddFile(textdoc.NewFile(uri, "plaintext", 0, "stale snapshot"))
 
-	call := f.openAndClose(t, uri)
+	call := f.openAndClose(t, uri) // opened with the text "edited"
 
 	if len(call.deleted) != 0 {
 		t.Errorf("expected no deleted documents, got %v", call.deleted)
@@ -204,9 +208,69 @@ func TestTextDocuments_CloseKeepsExistingFile(t *testing.T) {
 	if store.GetOverlay(uri) != nil {
 		t.Error("overlay should have been removed")
 	}
-	if store.GetFile(uri) == nil {
-		t.Error("file of an existing document should be kept in the store")
+	file := store.GetFile(uri)
+	if file == nil {
+		t.Fatal("file of an existing document should be in the store")
 	}
+	if file.Text(nil) != "on disk" {
+		t.Errorf("expected the stored file to have the text of the file system, got %q", file.Text(nil))
+	}
+	if file.LanguageID() != "plaintext" {
+		t.Errorf("expected language plaintext, got %q", file.LanguageID())
+	}
+	if len(call.changed) != 1 || call.changed[0] != textdoc.Handle(file) {
+		t.Fatalf("expected the file to be reported as changed, got %v", call.changed)
+	}
+}
+
+// Without unsaved changes, the document that is already built is kept, but
+// the stored file is refreshed nevertheless.
+func TestTextDocuments_CloseWithoutUnsavedChanges(t *testing.T) {
+	f := newCloseFixture()
+	uri := lsp.DocumentURI("file:///ws/test.txt")
+	// The editor saved its text "edited" before closing.
+	if err := f.files.WriteFile(core.ParseURI(string(uri)), []byte("edited")); err != nil {
+		t.Fatal(err)
+	}
+	store := f.sc.MustGet[textdoc.Store]()
+	store.AddFile(textdoc.NewFile(uri, "plaintext", 0, "stale snapshot"))
+
+	call := f.openAndClose(t, uri)
+
+	if len(call.changed) != 0 || len(call.deleted) != 0 {
+		t.Errorf("expected no changed or deleted documents, got %v", call)
+	}
+	if file := store.GetFile(uri); file == nil || file.Text(nil) != "edited" {
+		t.Errorf("expected the stored file to be refreshed, got %v", file)
+	}
+}
+
+// A document that cannot be read is neither deleted nor changed: only a file
+// that is known to be gone is dropped.
+func TestTextDocuments_CloseKeepsUnreadableDocument(t *testing.T) {
+	f := newCloseFixture()
+	uri := lsp.DocumentURI("file:///ws/test.txt")
+	f.sc.MustGet[workspace.FileSystem]().RegisterProvider(core.FileScheme, unreadableProvider{f.files})
+	store := f.sc.MustGet[textdoc.Store]()
+	store.AddFile(textdoc.NewFile(uri, "plaintext", 0, "snapshot"))
+
+	call := f.openAndClose(t, uri)
+
+	if len(call.changed) != 0 || len(call.deleted) != 0 {
+		t.Errorf("expected no changed or deleted documents, got %v", call)
+	}
+	if file := store.GetFile(uri); file == nil || file.Text(nil) != "snapshot" {
+		t.Errorf("expected the stored file to be kept, got %v", file)
+	}
+}
+
+// unreadableProvider fails every read with an error other than "not exist".
+type unreadableProvider struct {
+	workspace.FileSystemProvider
+}
+
+func (unreadableProvider) ReadFile(context.Context, core.URI) ([]byte, error) {
+	return nil, errors.New("permission denied")
 }
 
 func TestTextDocuments_CloseDeletesMissingFile(t *testing.T) {

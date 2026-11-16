@@ -16,7 +16,7 @@ func SetupDefaultServices(sc *service.Container) {
 		sc.Put(NewDefaultDocumentManager(sc))
 	}
 	if !sc.Has[FileSystem]() {
-		sc.Put[FileSystem](NewDiskFileSystem())
+		sc.Put(NewDiskFileSystem())
 	}
 	if !sc.Has[Initializer]() {
 		sc.Put(NewDefaultInitializer(sc))
