@@ -34,6 +34,10 @@ func (m *mockDocumentUpdater) Update(ctx context.Context, changed []textdoc.Hand
 	m.updateCalls = append(m.updateCalls, updateCall{changed: changed, deleted: deleted})
 }
 
+func (m *mockDocumentUpdater) OnUpdate(workspace.DocumentUpdateListener) func() {
+	return func() {}
+}
+
 func (m *mockDocumentUpdater) getUpdateCalls() []updateCall {
 	// The synchronizer returns as soon as the text change is applied and calls
 	// Update later in the same write. Wait for that write to finish.
@@ -136,6 +140,121 @@ func TestTextDocuments_Lifecycle(t *testing.T) {
 	// Verify overlay was removed from store
 	if textdocStore.GetOverlay(uri) != nil {
 		t.Error("document should have been removed from collection")
+	}
+}
+
+// closeFixture opens and closes documents against an in-memory file system.
+type closeFixture struct {
+	sc      *service.Container
+	updater *mockDocumentUpdater
+	files   *workspace.VirtualFileSystemProvider
+	ds      DocumentSynchronizer
+}
+
+func newCloseFixture() *closeFixture {
+	files := workspace.NewVirtualFileSystemProvider()
+	fileSystem := workspace.NewDefaultFileSystem()
+	fileSystem.RegisterProvider(core.FileScheme, files)
+
+	sc := service.NewContainer()
+	sc.Put[workspace.FileSystem](fileSystem)
+	textdoc.SetupDefaultServices(sc)
+	workspace.SetupDefaultServices(sc)
+	SetupDefaultServices(sc)
+	updater := &mockDocumentUpdater{}
+	sc.Override[workspace.DocumentUpdater](updater)
+	sc.Seal()
+	updater.lock = sc.MustGet[workspace.Lock]()
+	return &closeFixture{sc: sc, updater: updater, files: files, ds: NewDefaultDocumentSynchronizer(sc)}
+}
+
+// openAndClose opens uri, closes it again and returns the update of the close.
+func (f *closeFixture) openAndClose(t *testing.T, uri lsp.DocumentURI) updateCall {
+	t.Helper()
+	ctx := context.Background()
+	f.ds.DidOpen(ctx, &lsp.DidOpenTextDocumentParams{
+		TextDocument: lsp.TextDocumentItem{URI: uri, LanguageID: "plaintext", Version: 1, Text: "edited"},
+	})
+	f.updater.getUpdateCalls() // wait for the write of didOpen
+	f.updater.reset()
+	f.ds.DidClose(ctx, &lsp.DidCloseTextDocumentParams{
+		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
+	})
+	calls := f.updater.getUpdateCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 update call after close, got %d", len(calls))
+	}
+	return calls[0]
+}
+
+func TestTextDocuments_CloseKeepsExistingFile(t *testing.T) {
+	f := newCloseFixture()
+	uri := lsp.DocumentURI("file:///ws/test.txt")
+	if err := f.files.WriteFile(core.ParseURI(string(uri)), []byte("on disk")); err != nil {
+		t.Fatal(err)
+	}
+	store := f.sc.MustGet[textdoc.Store]()
+	store.AddFile(textdoc.NewFile(uri, "plaintext", 0, "on disk"))
+
+	call := f.openAndClose(t, uri)
+
+	if len(call.deleted) != 0 {
+		t.Errorf("expected no deleted documents, got %v", call.deleted)
+	}
+	if store.GetOverlay(uri) != nil {
+		t.Error("overlay should have been removed")
+	}
+	if store.GetFile(uri) == nil {
+		t.Error("file of an existing document should be kept in the store")
+	}
+}
+
+func TestTextDocuments_CloseDeletesMissingFile(t *testing.T) {
+	tests := []struct {
+		name string
+		uri  lsp.DocumentURI
+	}{
+		{"file deleted while open", "file:///ws/test.txt"},
+		{"scheme without provider", "untitled:Untitled-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newCloseFixture()
+			store := f.sc.MustGet[textdoc.Store]()
+			// The file was loaded with the workspace and deleted afterwards.
+			store.AddFile(textdoc.NewFile(tt.uri, "plaintext", 0, "on disk"))
+
+			call := f.openAndClose(t, tt.uri)
+
+			if len(call.deleted) != 1 || call.deleted[0].DocumentURI() != tt.uri {
+				t.Fatalf("expected %s to be deleted, got %v", tt.uri, call.deleted)
+			}
+			if len(call.changed) != 0 {
+				t.Errorf("expected no changed documents, got %d", len(call.changed))
+			}
+			if store.Get(tt.uri) != nil {
+				t.Error("document should have been removed from the store")
+			}
+		})
+	}
+}
+
+func TestTextDocuments_CloseOfUnopenedDocumentDeletesNothing(t *testing.T) {
+	f := newCloseFixture()
+	uri := lsp.DocumentURI("file:///ws/missing.txt")
+	store := f.sc.MustGet[textdoc.Store]()
+	store.AddFile(textdoc.NewFile(uri, "plaintext", 0, "stale"))
+
+	f.ds.DidClose(context.Background(), &lsp.DidCloseTextDocumentParams{
+		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
+	})
+
+	calls := f.updater.getUpdateCalls()
+	if len(calls) != 1 || len(calls[0].deleted) != 0 {
+		t.Errorf("expected a single update without deletions, got %v", calls)
+	}
+	if store.GetFile(uri) == nil {
+		t.Error("file should be kept in the store")
 	}
 }
 

@@ -31,7 +31,9 @@
 // so callers always see the effective editor content for open documents.
 //
 // On didClose, the server removes the overlay and reverts the workspace to
-// on-disk [File] content when the URI refers to a local file.
+// on-disk [File] content when the URI refers to a local file. A document that
+// does not exist in the [typefox.dev/fastbelt/workspace.FileSystem] is removed
+// from the workspace instead.
 //
 // # Service registration
 //

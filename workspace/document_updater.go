@@ -8,6 +8,8 @@ import (
 	"context"
 	"log"
 	"runtime/debug"
+	"slices"
+	"sync"
 
 	core "typefox.dev/fastbelt"
 	"typefox.dev/fastbelt/textdoc"
@@ -32,11 +34,60 @@ type DocumentUpdater interface {
 	// the build is cut short when ctx is cancelled by a newer write, and that
 	// write is then responsible for building the documents left incomplete.
 	Update(ctx context.Context, changed []textdoc.Handle, deleted []core.URI)
+	// OnUpdate registers a [DocumentUpdateListener] that is called for every update.
+	// The returned function removes the listener again; calling it more than
+	// once has no effect. An update that is already notifying its listeners
+	// may still call a listener that was removed in the meantime.
+	OnUpdate(listener DocumentUpdateListener) (dispose func())
 }
+
+// DocumentUpdateListener is called by [DocumentUpdater.Update] with the URIs
+// of the changed and deleted documents. Updates that neither change nor
+// delete a document, and only finish a pending build, are not reported.
+// Listeners are invoked synchronously in the order they were registered.
+//
+// Listeners run after the changes were applied to the [DocumentManager] and
+// before the workspace is rebuilt, while the [Lock] is held for writing.
+type DocumentUpdateListener func(ctx context.Context, changed []core.URI, deleted []core.URI)
 
 // DefaultDocumentUpdater is the default implementation of [DocumentUpdater].
 type DefaultDocumentUpdater struct {
-	sc *service.Container
+	sc        *service.Container
+	mu        sync.RWMutex
+	listeners []*DocumentUpdateListener
+}
+
+// OnUpdate registers a [DocumentUpdateListener] that is called for every update. The returned
+// function removes the listener again.
+func (s *DefaultDocumentUpdater) OnUpdate(listener DocumentUpdateListener) func() {
+	// Functions are not comparable: the pointer identifies this registration,
+	// also if the same listener is registered more than once.
+	entry := &listener
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.listeners = append(s.listeners, entry)
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if i := slices.Index(s.listeners, entry); i >= 0 {
+			// Build a new slice rather than shifting in place, which keeps
+			// the order and leaves snapshots taken by notify untouched.
+			s.listeners = slices.Concat(s.listeners[:i], s.listeners[i+1:])
+		}
+	}
+}
+
+// notify reports the changed and deleted documents to the update listeners.
+func (s *DefaultDocumentUpdater) notify(ctx context.Context, changed []core.URI, deleted []core.URI) {
+	if len(changed) == 0 && len(deleted) == 0 {
+		return
+	}
+	s.mu.RLock()
+	listeners := slices.Clone(s.listeners)
+	s.mu.RUnlock()
+	for _, listener := range listeners {
+		(*listener)(ctx, changed, deleted)
+	}
 }
 
 // NewDefaultDocumentUpdater returns a [DocumentUpdater] that coordinates
@@ -52,15 +103,18 @@ func (s *DefaultDocumentUpdater) Update(ctx context.Context, changed []textdoc.H
 	// The caller holds the write lock, so this is the mutation phase: documents
 	// may be replaced, deleted, and reset until the build starts below.
 	changedURIs := make(collections.Set[string], len(changed)+len(deleted))
+	changedList := make([]core.URI, 0, len(changed))
 	for _, handle := range changed {
 		doc := core.NewDocument(handle)
 		docManager.Set(doc)
 		changedURIs.Add(doc.URI.StringUnencoded())
+		changedList = append(changedList, doc.URI)
 	}
 	for _, uri := range deleted {
 		docManager.Delete(uri)
 		changedURIs.Add(uri.StringUnencoded())
 	}
+	s.notify(ctx, changedList, deleted)
 
 	// Reset documents that depend on a changed document so their references
 	// are resolved again, then collect every document that has not yet

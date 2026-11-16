@@ -7,6 +7,8 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io/fs"
 	"log"
 	"sync"
 
@@ -63,6 +65,10 @@ type TextDocumentWillSaveWaitUntilHandler func(ctx context.Context, event *TextD
 // order the notifications were received. Every write ends with a rebuild,
 // including DidClose and notifications that leave the text unchanged, because
 // acquiring the write lock cancels the build that was running.
+//
+// DidClose additionally checks the closed document against the
+// [workspace.FileSystem]: if it does not exist there, it is removed from the
+// [textdoc.Store] and reported to the [workspace.DocumentUpdater] as deleted.
 //
 // Thread Safety: All methods are safe for concurrent use.
 type DocumentSynchronizer interface {
@@ -178,16 +184,40 @@ func (s *DefaultDocumentSynchronizer) DidClose(ctx context.Context, params *lsp.
 	workspace.UpdateInLock(context.Background(), s.sc, func(writeCtx context.Context) ([]textdoc.Handle, []core.URI, func()) {
 		textdocStore := s.sc.MustGet[textdoc.Store]()
 		uri := core.NormalizeURI(params.TextDocument.URI)
+		existing := textdocStore.GetOverlay(uri)
+		if existing == nil {
+			return nil, nil, nil
+		}
 		// The handlers run before the overlay is removed, so the notification
 		// waits for them.
-		if existing := textdocStore.GetOverlay(uri); existing != nil {
-			s.notify(writeCtx, &s.didCloseHandlers, existing)
-		}
+		s.notify(writeCtx, &s.didCloseHandlers, existing)
 		textdocStore.RemoveOverlay(uri)
-		// TODO: Maybe do some more work here - a closed document could no longer exist.
-		// see also https://github.com/eclipse-fastbelt/fastbelt/issues/185
-		return nil, nil, nil
+		// The editor buffer was the only source of a document that does not
+		// (or no longer) exist in the file system, such as an untitled document
+		// or a file that was deleted while it was open. Remove it from the
+		// workspace, so that other documents no longer link against it.
+		coreURI := core.ParseURI(string(uri))
+		if !s.missingInFileSystem(writeCtx, coreURI) {
+			return nil, nil, nil
+		}
+		textdocStore.RemoveFile(uri)
+		return nil, []core.URI{coreURI}, nil
 	})
+}
+
+// missingInFileSystem reports whether the [workspace.FileSystem] positively
+// states that uri does not exist. It returns false if no file system is
+// registered or the lookup fails for another reason, such as missing
+// permissions: a document is only dropped when it is known to be gone.
+func (s *DefaultDocumentSynchronizer) missingInFileSystem(ctx context.Context, uri core.URI) bool {
+	fileSystem, err := s.sc.Get[workspace.FileSystem]()
+	if err != nil {
+		return false
+	}
+	// The write's context is cancelled as soon as a newer write arrives, which
+	// must not turn into a different answer.
+	_, err = fileSystem.Stat(context.WithoutCancel(ctx), uri)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 func (s *DefaultDocumentSynchronizer) OnDidClose(handler TextDocumentChangeHandler) {

@@ -37,17 +37,17 @@ func TestDefaultInitializerReadyClosesAfterInitialize(t *testing.T) {
 // [textdoc.Store]: later document changes resolve their text document through
 // the store and would otherwise not find the files loaded from disk.
 func TestDefaultInitializerAddsLoadedFilesToTextStore(t *testing.T) {
-	fs := NewVirtualFileSystem()
+	fs, files := newVirtualFileSystem()
 	loaded := core.ParseURI("file:///ws/a.hello")
 	nested := core.ParseURI("file:///ws/sub/b.hello")
 	ignored := core.ParseURI("file:///ws/c.other")
-	require.NoError(t, fs.WriteFile(loaded, []byte("hello a")))
-	require.NoError(t, fs.WriteFile(nested, []byte("hello b")))
-	require.NoError(t, fs.WriteFile(ignored, []byte("other")))
+	require.NoError(t, files.WriteFile(loaded, []byte("hello a")))
+	require.NoError(t, files.WriteFile(nested, []byte("hello b")))
+	require.NoError(t, files.WriteFile(ignored, []byte("other")))
 
 	sc := service.NewContainer()
 	textdoc.SetupDefaultServices(sc)
-	sc.Put[FileSystem](fs)
+	sc.Put(fs)
 	sc.Put[core.LanguageSelector](NewDefaultLanguageSelector(sc,
 		NewDocumentMatcherWithPatterns("greeting", "**/*.hello"),
 	))

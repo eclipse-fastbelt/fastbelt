@@ -47,13 +47,13 @@ type DiagnosticsPublisherOptions struct {
 //   - A document is opened (reuses diagnostics from build).
 //   - A document is closed (clears diagnostics).
 //   - A document is validated by the builder.
+//   - A document is deleted from the workspace (clears diagnostics).
 //
 // By default, only documents that are open in the editor are covered. With
 // [DiagnosticsPublisherOptions.AllDocuments], every validated document is
 // published, and closing a document that is still part of the workspace
-// keeps its diagnostics. Diagnostics of a document that is removed from the
-// workspace are not cleared automatically; call
-// [DiagnosticsPublisher.ClearDiagnostics] where documents are removed.
+// keeps its diagnostics. Diagnostics of a document that is deleted through
+// [workspace.DocumentUpdater.Update] are cleared.
 type DefaultDiagnosticsPublisher struct {
 	sc      *service.Container
 	options DiagnosticsPublisherOptions
@@ -128,6 +128,20 @@ func (d *DefaultDiagnosticsPublisher) OnServerInitialize(_ *lsp.ParamInitialize)
 		// Clear diagnostics for the closed document.
 		d.ClearDiagnostics(ctx, uri)
 	})
+	if updater, err := d.sc.Get[workspace.DocumentUpdater](); err == nil {
+		updater.OnUpdate(func(ctx context.Context, _ []core.URI, deleted []core.URI) {
+			for _, uri := range deleted {
+				if !d.options.AllDocuments && store.GetOverlay(uri.DocumentURI()) == nil {
+					// Only open documents have diagnostics, and those of a
+					// closed document were already cleared by didClose.
+					continue
+				}
+				// Document was removed/deleted, but client still potentially has diagnostics for it.
+				// Clear those, because clients keep diagnostics, even if the file no longer exists.
+				d.ClearDiagnostics(ctx, uri)
+			}
+		})
+	}
 	builder, err := d.sc.Get[workspace.Builder]()
 	if err != nil {
 		return
