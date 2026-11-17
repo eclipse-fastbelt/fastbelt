@@ -81,19 +81,22 @@ func GetRepository(grammar grammar.Grammar, config TextMateGeneratorConfig) Repo
 	var stringEscapePattern *Pattern
 	for _, terminal := range grammar.Terminals() {
 		if regexPattern := tokenRegexp(terminal); terminal.Modifier() == "comment" && regexPattern != "" {
-			regexPattern = regexPattern[1 : len(regexPattern)-1]
-			parts := GetTerminalParts(regexPattern)
+			// A regex that cannot be split simply yields no comment patterns.
+			parts, _ := SplitDelimiters(regexPattern[1 : len(regexPattern)-1])
 			for _, part := range parts {
-				if part.end != "" {
+				if part.Begin == "" {
+					continue
+				}
+				if part.End != "" {
 					commentPatterns = append(commentPatterns, Pattern{
 						Name:  fmt.Sprintf(`comment.block.%s`, config.Id),
-						Begin: part.start,
+						Begin: part.Begin,
 						BeginCaptures: Captures{
 							"0": Pattern{
 								Name: fmt.Sprintf(`punctuation.definition.comment.%s`, config.Id),
 							},
 						},
-						End: part.end,
+						End: part.End,
 						EndCaptures: Captures{
 							"0": Pattern{
 								Name: fmt.Sprintf(`punctuation.definition.comment.%s`, config.Id),
@@ -102,7 +105,7 @@ func GetRepository(grammar grammar.Grammar, config TextMateGeneratorConfig) Repo
 					})
 				} else {
 					commentPatterns = append(commentPatterns, Pattern{
-						Begin: part.start,
+						Begin: part.Begin,
 						BeginCaptures: Captures{
 							"1": Pattern{
 								Name: fmt.Sprintf(`punctuation.whitespace.comment.leading.%s`, config.Id),
@@ -214,14 +217,14 @@ func GetStringPatterns(grammr grammar.Grammar, config TextMateGeneratorConfig) [
 	}
 	stringPatterns := []Pattern{}
 	if regexPattern := tokenRegexp(stringTerminal); regexPattern != "" {
-		regexPattern = regexPattern[1 : len(regexPattern)-1]
-		parts := GetTerminalParts(regexPattern)
+		// A regex that cannot be split simply yields no string patterns.
+		parts, _ := SplitDelimiters(grammar.RegexpValue(regexPattern))
 		for _, part := range parts {
-			if part.end != "" {
+			if part.Begin != "" && part.End != "" {
 				stringPatterns = append(stringPatterns, Pattern{
-					Name:  fmt.Sprintf(`string.quoted.%s.%s`, delimiterName(part.start), config.Id),
-					Begin: part.start,
-					End:   part.end,
+					Name:  fmt.Sprintf(`string.quoted.%s.%s`, delimiterName(part.Begin), config.Id),
+					Begin: part.Begin,
+					End:   part.End,
 					Patterns: []Pattern{
 						{
 							Include: "#string-character-escape",
