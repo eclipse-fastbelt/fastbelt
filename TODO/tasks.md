@@ -37,12 +37,30 @@ The design is in [README.md](README.md). Do the tasks roughly in this order.
 - Note: the TextMate generator now uses `SplitDelimiters`, but its `match` patterns (keywords) still use
   `regexp.QuoteMeta`. Task 3/4 switches them to `ToOniguruma`.
 
-## 2. Mode model for TextMate
+## 2. Mode model for TextMate ✅ done (2026-11-17)
 
-- [ ] Reuse `GenerateTokenTypes` / `lexerModes()` to get each mode's keywords, tokens, modifiers and commands,
-  with keyword selectors resolved.
-- [ ] Find each language's entry mode: the declared `Language.TokenMode`, `default`, or the generated `TokenMode_<Entry>`.
-- [ ] For each mode M, compute its pop tokens, used as the `end` of the rules that push into M.
+- [x] Reuse `GenerateTokenTypes` / `lexerModes()` to get each mode's keywords, tokens, modifiers and commands,
+  with keyword selectors resolved. The new `buildTextMateModel` in `internal/generator/textmate_modes.go`
+  produces `textMateModel{Modes, ModesByName, Languages}`.
+  - Each `textMateToken` has: `Name`, `Keyword` (unquoted) or `Regexp` (no slashes), `Modifier` for this mode,
+    and `Command` + `Target`.
+  - Commands with an unknown target mode are dropped, like the lexer does.
+  - The lexer's per-mode filter (reachability) moved into `lexerMode.tokenIndices`, which both generators share.
+    After regenerating all 10 languages, no generated file changed.
+- [x] Find each language's entry mode: the declared `Language.TokenMode`, `default`, or the generated per-entry mode.
+  - The per-entry mode's **name** is the entry rule name (`Greeting`). Its lexer constant is `TokenMode_Greeting`.
+  - So README's repository keys become `Greeting` (language) and `mode_Greeting` (mode).
+- [x] `textMateMode.PopTokens()` returns each mode's pop tokens, used as the `end` of the rules that push into that mode.
+- [x] Tests: `textmate_modes_test.go` has 8 tests:
+  - implicit default
+  - no entries
+  - keyword token
+  - push/pop/mode with modifiers that differ per mode
+  - unknown target
+  - keyword selector
+  - generated and declared multi-language modes
+- Note: keyword `Name`s come from `grammar.KeywordName`. Letters keep their case (`hello`), punctuation is named
+  (`Semicolon`, `RightBrace`). Task 4 uses them for repository keys of tokens with commands.
 
 ## 3. Scopes
 

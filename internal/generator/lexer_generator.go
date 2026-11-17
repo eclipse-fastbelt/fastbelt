@@ -165,14 +165,26 @@ func generateMainLexerFunction(context context.Context, node codegen.Node, modes
 func generateTokenMode(context context.Context, n codegen.Node, m lexerMode, targets map[string]*TokenMode, tokenTypes GenerateTokenTypesResult) {
 	n.AppendLine("modes[", m.mode.VarName, "] = lexer.NewTokenMode(\"", m.name, "\",")
 	n.Indent(func(nn codegen.Node) {
-		for _, tokenIndex := range slices.Concat(m.mode.ModeTokenTypes.Keywords, m.mode.ModeTokenTypes.Tokens) {
-			tokenType := tokenTypes.TokenTypes.ByTokenIndex[tokenIndex]
-			if m.reachable == nil || m.reachable[tokenType.VarName] || m.mode.TokenTypeUsages[tokenIndex] != (tokenTypeUsage{}) {
-				generateTokenTypeUsage(context, nn, tokenType, m.mode, tokenIndex, targets)
-			}
+		for _, tokenIndex := range m.tokenIndices(tokenTypes) {
+			generateTokenTypeUsage(context, nn, tokenTypes.TokenTypes.ByTokenIndex[tokenIndex], m.mode, tokenIndex, targets)
 		}
 	})
 	n.AppendLine(")")
+}
+
+// tokenIndices returns the token indices that are active in m, in lexer
+// priority order (keywords before tokens). Token types outside m.reachable
+// are left out unless they carry a modifier or command.
+// The TextMate generator uses the same selection (see buildTextMateModel).
+func (m lexerMode) tokenIndices(tokenTypes GenerateTokenTypesResult) []int {
+	var result []int
+	for _, tokenIndex := range slices.Concat(m.mode.ModeTokenTypes.Keywords, m.mode.ModeTokenTypes.Tokens) {
+		tokenType := tokenTypes.TokenTypes.ByTokenIndex[tokenIndex]
+		if m.reachable == nil || m.reachable[tokenType.VarName] || m.mode.TokenTypeUsages[tokenIndex] != (tokenTypeUsage{}) {
+			result = append(result, tokenIndex)
+		}
+	}
+	return result
 }
 
 // reachableTokenNames returns the generated var names (Keyword_*/Token_*) of
