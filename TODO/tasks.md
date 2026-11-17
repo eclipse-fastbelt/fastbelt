@@ -1,0 +1,105 @@
+# Tasks: TextMate generation
+
+The design is in [README.md](README.md). Do the tasks roughly in this order.
+
+## 0. Rebase
+
+- [ ] Rebase `lotes/textmate` onto `origin/main`. Expect conflicts in `cmd/fastbelt/generate.go` and `cmd/fastbelt/main.go`.
+- [ ] Adapt the draft to the current grammar AST:
+  - `TokenDecl.Content` (regex or keyword content)
+  - token modifiers
+  - `grammar.KeywordValue` / `grammar.RegexpValue`
+- [ ] `go build ./... && go test ./...` pass.
+
+## 1. Regex handling (`internal/generator/regexp_utils.go`)
+
+- [ ] Rewrite begin/end extraction on `regexp/syntax`. Fix these bugs:
+  - [ ] `OpQuest`: the skip branch is lost because `splitInst` is appended by value.
+  - [ ] Panic on `^`, `$`, `\A`, `\z`, `\b`, `\B`: the code reads `Sub[0]` on nodes that have no children.
+  - [ ] `a+` must keep its required leading `a`.
+  - [ ] Return parse errors instead of `nil`.
+- [ ] Re-emit Oniguruma regex from the `syntax.Regexp` tree:
+  - [ ] `(?P<name>…)` → `(?<name>…)`
+  - [ ] Check flag semantics: `(?s)`, `(?m)`, `(?U)`, `(?i)`
+  - [ ] Character class escaping
+- [ ] Unit tests for each case above.
+
+## 2. Mode model for TextMate
+
+- [ ] Reuse `GenerateTokenTypes` / `lexerModes()` to get each mode's keywords, tokens, modifiers and commands,
+  with keyword selectors resolved.
+- [ ] Find each language's entry mode: the declared `Language.TokenMode`, `default`, or the generated `TokenMode_<Entry>`.
+- [ ] For each mode M, compute its pop tokens, used as the `end` of the rules that push into M.
+
+## 3. Scopes
+
+- [ ] Heuristic scope function: (token or keyword, modifier, name, multiline?) → scope or none. Rules are in README "Scopes".
+- [ ] Keyword grouping by word boundaries, ported from the draft but using the **unquoted** keyword value.
+  Sort alternatives by length, longest first, to approximate the lexer's longest-match behaviour.
+- [ ] `BuildContext.TextMateScopes map[string]string` overrides the heuristic.
+
+## 4. Common file generator
+
+- [ ] Repository entries:
+  - `<EntryRule>`
+  - `mode_<Mode>`
+  - `keywords_<Mode>`
+  - `token_<Name>` and `token_<Name>_comment`
+- [ ] Do not emit `hidden` tokens with a scope, though they may still be needed as plain `match` to consume text.
+- [ ] Token-mode commands:
+  - [ ] `push(M)`: `begin` = the token, `end` = M's pop tokens joined with `|`, `patterns` = include `#mode_M`
+  - [ ] Mode with no pop: `end: "(?!)"`
+  - [ ] `mode(M)`: `end` is a lookahead on the parent's end; print a warning when this is ambiguous
+  - [ ] Pop tokens are not emitted inside their own mode's patterns
+- [ ] Pattern order inside a mode: command rules, then begin/end tokens, then keywords, then other tokens.
+  Document why: TextMate takes the leftmost match, with ties broken by pattern order, while the lexer takes the longest match.
+- [ ] Deterministic JSON output with stable key order, suitable for golden tests.
+
+## 5. Language file generator
+
+- [ ] `<languageID>.tmLanguage.json`: `name`, `scopeName: source.<languageID>`,
+  `patterns: [{include: "source.<grammar>-common#<EntryRule>"}]`.
+  `fileTypes` comes from the language patterns where they are simple extensions; VS Code ignores it anyway.
+
+## 6. Wiring
+
+- [ ] `cmd.BuildContext`: add `TextMateOutput string` and `TextMateScopes map[string]string`, and pass them to `cmd.Generate`.
+- [ ] Language ID, entry rule and entry mode for each TextMate file come from `BuildContext.Languages`.
+- [ ] `fastbelt generate` CLI: remove the draft's `--textMateOut` flag (`cmd/fastbelt/main.go`, `generate.go`). Add no new flags.
+- [ ] Remove the draft's use of `grammar.CreateServices()` for the ID and extensions.
+
+## 7. Tests
+
+- [ ] Golden test on `internal/languages/multilang`: several files, two languages, per-language modes.
+- [ ] Golden test on `internal/languages/token_modes`: push, pop, nested modes.
+- [ ] Golden tests for arithmetics and statemachine through the generated extension files.
+- [ ] A test with a string token to cover the string patterns and escapes.
+
+## 8. VS Code extensions (`internal/vscode-extensions`)
+
+- [ ] arithmetics and statemachine:
+  - [ ] Change `examples/arithmetics` and `examples/statemachine` from the CLI `go:generate` line to a
+    `gen/main.go` with `cmd.BuildContext` (one `Language` each, `TextMateOutput` pointing at the extension's `syntaxes/`).
+    Keep the existing `--atn` option for statemachine (`BuildContext.ATN`).
+  - [ ] Generate `syntaxes/arithmetics-common.tmLanguage.json` + `syntaxes/arithmetics.tmLanguage.json`
+    (and the same for statemachine).
+  - [ ] The selector is now generated into `services_gen.go`. Remove the hand-written
+    `sc.Put[core.LanguageSelector]` from their `services.go` so the ID is declared in one place (Q18: agreed).
+  - [ ] Delete the hand-written files those replace.
+  - [ ] Edit `package.json` by hand: add a `grammars` entry for the common file (`scopeName` + `path`, no `language`).
+- [ ] `fastbelt` (the grammar language): keep the hand-written `data/fastbelt.tmLanguage.json`.
+
+## 9. Scaffold (`internal/scaffold`)
+
+- [ ] Add a `gen/main.go.tmpl` using `cmd.BuildContext` (LanguageID and patterns from the template params, plus `TextMateOutput`).
+  Point the `go:generate` line in `services.go.tmpl` at it.
+- [ ] Remove the hand-written `sc.Put[core.LanguageSelector]` from `services.go.tmpl`. The generated one replaces it (Q18).
+- [ ] `package.json.tmpl`: add the grammars entry for the common file.
+- [ ] Drop `syntaxes/language.tmLanguage.json.tmpl`, or replace it with a placeholder that the first generate run overwrites.
+- [ ] Update `scaffold_test.go`.
+
+## 10. Docs
+
+- [ ] Document TextMate generation: the `BuildContext` fields, scope heuristics and overrides, mode mapping and its limits,
+  and the `package.json` snippet. Put it in `doc.go` and/or `grammar/doc.go`.
+- [ ] Side note: `workspace/doc.go` still refers to `[FileExtensions]`, which no longer exists. Fix it while you are there.
