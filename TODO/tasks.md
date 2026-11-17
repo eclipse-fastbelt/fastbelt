@@ -84,22 +84,42 @@ The design is in [README.md](README.md). Do the tasks roughly in this order.
   token declaration use their `grammar.KeywordName` (`Semicolon`). Task 6 fills it from `BuildContext.TextMateScopes`.
 - [x] Tests: `textmate_scopes_test.go`.
 
-## 4. Common file generator
+## 4. Common file generator ✅ done (2026-11-17)
 
-- [ ] Repository entries:
-  - `<EntryRule>`
-  - `mode_<Mode>`
-  - `keywords_<Mode>`
-  - `token_<Name>` and `token_<Name>_comment`
-- [ ] Do not emit `hidden` tokens with a scope, though they may still be needed as plain `match` to consume text.
-- [ ] Token-mode commands:
-  - [ ] `push(M)`: `begin` = the token, `end` = M's pop tokens joined with `|`, `patterns` = include `#mode_M`
-  - [ ] Mode with no pop: `end: "(?!)"`
-  - [ ] `mode(M)`: `end` is a lookahead on the parent's end; print a warning when this is ambiguous
-  - [ ] Pop tokens are not emitted inside their own mode's patterns
-- [ ] Pattern order inside a mode: command rules, then begin/end tokens, then keywords, then other tokens.
-  Document why: TextMate takes the leftmost match, with ties broken by pattern order, while the lexer takes the longest match.
-- [ ] Deterministic JSON output with stable key order, suitable for golden tests.
+`GenerateTextMateCommon(grammar, entryRules, entryModes, tokenTypes, overrides) (TextMateCommonResult{Content, Warnings}, error)`
+in `internal/generator/textmate_generator.go` replaces the draft. `TextMateGrammarName(grammar)` gives the lower-cased name.
+
+- [x] Repository entries:
+  - `<EntryRule>` → include `#mode_<EntryMode>`. Nothing is emitted when there are no entry rules.
+  - `mode_<Mode>`: includes only
+  - `keywords_<Mode>`: one `match`. If the keywords have different scopes, each group is a capture with its own scope,
+    so that one regex keeps the longest-first order across scopes (`:=` before `:`).
+  - `token_<Name>`, `token_<Name>_comment`, `token_<Name>_hidden`
+  - Command rules: `token_<Name>[_<mod>]_push_<T>` and `token_<Name>[_<mod>]_mode_<T>_in_<Mode>`.
+    The `mode` rule's end depends on the parent mode, so the parent is part of the key.
+- [x] `hidden` tokens never get a scope. They are emitted as plain `match` to consume text,
+  except tokens that can only match whitespace, which are left out.
+- [x] Comment and string tokens (by modifier or scope) are split with `SplitDelimiters`. They become `begin`/`end`
+  (one rule per alternative) when at least one alternative has an end delimiter, and alternatives without an end
+  get `end: "$"`. Otherwise (line comments, no literal begin, too many alternatives) they stay one `match`.
+  Strings whose regex contains a literal `\` get an inner `\\.` → `constant.character.escape` pattern.
+  - Limitation: the escape pattern is added to every alternative of that token (`'[^']*'` too).
+    Go's parser factors out common prefixes, so a body cannot reliably be mapped back to its split part.
+- [x] Token-mode commands:
+  - [x] `push(M)`: `begin` = the token (scope in `beginCaptures`), `end` = M's pop tokens. With several pop tokens,
+    each is wrapped in a capture for `endCaptures`, and captures inside a token regex shift the numbering.
+    `patterns` = include `#mode_M`.
+  - [x] Mode with no pop: `end: "(?!)"`
+  - [x] `mode(M)` in P: `end: "(?=<P's pops>)"`, or `(?!)` if P has none. A warning is returned when M's pop tokens
+    differ from P's. Printing it is left to the caller (task 6).
+  - [x] Pop tokens are not emitted inside their own mode's patterns.
+    - Limitation: pop tokens in an entry mode are therefore not highlighted at the root.
+- [x] Pattern order inside a mode: command rules, comment/string tokens, keywords, other tokens (documented on
+  `GenerateTextMateCommon`).
+- [x] Deterministic JSON: `encoding/json` sorts the map keys, and `SetEscapeHTML(false)` keeps `&&`/`<` readable.
+- [x] Tests: `textmate_generator_test.go`. Also a one-off check with real `vscode-textmate` + `vscode-oniguruma`
+  on the token_modes grammar and a basic grammar (not committed). Nested interpolation, multi-line comments,
+  escapes, `//` vs `/`, and `iffy` vs `if` all tokenize as expected.
 
 ## 5. Language file generator
 
