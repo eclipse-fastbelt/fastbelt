@@ -9,11 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"typefox.dev/fastbelt/internal/grammar"
-	"typefox.dev/fastbelt/linking"
 	"typefox.dev/fastbelt/test"
-	"typefox.dev/fastbelt/textdoc"
-	"typefox.dev/fastbelt/util/service"
-	"typefox.dev/fastbelt/workspace"
 )
 
 const commonTokens = `
@@ -24,7 +20,7 @@ comment token ML_COMMENT: /\/\*[\s\S]*?\*\//;
 `
 
 func TestTextmateGenerator(t *testing.T) {
-	f := test.New(t, CreateServices())
+	f := test.New(t, grammar.CreateServices())
 	doc := f.Parse(`
 		grammar Test;
 		interface Foo { Bar *Bar }
@@ -85,21 +81,4 @@ func TestTextmateGenerator(t *testing.T) {
   ],
   "name": "fastbelt"
 }`, content)
-}
-
-func CreateServices() *service.Container {
-	sc := service.NewContainer()
-	SetupServices(sc)
-	sc.Seal()
-	return sc
-}
-
-func SetupServices(sc *service.Container) {
-	service.Put[workspace.LanguageID](sc, "fastbelt")
-	service.Put[workspace.FileExtensions](sc, []string{".fb"})
-
-	textdoc.SetupDefaultServices(sc)
-	linking.SetupDefaultServices(sc)
-	workspace.SetupDefaultServices(sc)
-	grammar.SetupGeneratedServices(sc)
 }

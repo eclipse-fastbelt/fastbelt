@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"typefox.dev/fastbelt/internal/grammar"
-	"typefox.dev/fastbelt/workspace"
 )
 
 type TextMateGrammar struct {
@@ -48,8 +47,8 @@ type Pattern struct {
 type Captures = map[string]Pattern
 
 type TextMateGeneratorConfig struct {
-	Id              workspace.LanguageID
-	FileExtensions  workspace.FileExtensions
+	Id              string
+	FileExtensions  []string
 	CaseInsensitive bool
 }
 
@@ -81,8 +80,7 @@ func GetRepository(grammar grammar.Grammar, config TextMateGeneratorConfig) Repo
 	commentPatterns := []Pattern{}
 	var stringEscapePattern *Pattern
 	for _, terminal := range grammar.Terminals() {
-		if terminal.Type() == "comment" {
-			regexPattern := terminal.Regexp()
+		if regexPattern := tokenRegexp(terminal); terminal.Modifier() == "comment" && regexPattern != "" {
 			regexPattern = regexPattern[1 : len(regexPattern)-1]
 			parts := GetTerminalParts(regexPattern)
 			for _, part := range parts {
@@ -137,8 +135,8 @@ func GetRepository(grammar grammar.Grammar, config TextMateGeneratorConfig) Repo
 func GetControlKeywords(grammr grammar.Grammar, config TextMateGeneratorConfig) Pattern {
 	regex := regexp.MustCompile(`[A-Za-z]`)
 	controlKeywords := []grammar.Keyword{}
-	for _, keyword := range GetAllKeywords(grammr) {
-		if regex.MatchString(keyword.Text()) {
+	for _, keyword := range GetAllKeywords(grammr).Keywords {
+		if regex.MatchString(grammar.KeywordValue(keyword)) {
 			controlKeywords = append(controlKeywords, keyword)
 		}
 	}
@@ -207,7 +205,7 @@ func GroupKeywords(keywords []grammar.Keyword) []string {
 
 func GetStringPatterns(grammr grammar.Grammar, config TextMateGeneratorConfig) []Pattern {
 	terminals := grammr.Terminals()
-	var stringTerminal grammar.Token
+	var stringTerminal grammar.TokenDecl
 	for _, terminal := range terminals {
 		if strings.ToLower(terminal.Name()) == "string" {
 			stringTerminal = terminal
@@ -215,8 +213,7 @@ func GetStringPatterns(grammr grammar.Grammar, config TextMateGeneratorConfig) [
 		}
 	}
 	stringPatterns := []Pattern{}
-	if stringTerminal != nil {
-		regexPattern := stringTerminal.Regexp()
+	if regexPattern := tokenRegexp(stringTerminal); regexPattern != "" {
 		regexPattern = regexPattern[1 : len(regexPattern)-1]
 		parts := GetTerminalParts(regexPattern)
 		for _, part := range parts {
@@ -248,4 +245,16 @@ func delimiterName(delimiter string) string {
 	default:
 		return "delimiter"
 	}
+}
+
+// tokenRegexp returns the regex literal (including slashes) of a regex token,
+// or "" if t is nil or not a regex token.
+func tokenRegexp(t grammar.TokenDecl) string {
+	if t == nil {
+		return ""
+	}
+	if content, ok := t.Content().(grammar.RegexpTokenContent); ok {
+		return content.Regexp()
+	}
+	return ""
 }
