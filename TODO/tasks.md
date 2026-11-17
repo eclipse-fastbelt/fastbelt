@@ -2,14 +2,15 @@
 
 The design is in [README.md](README.md). Do the tasks roughly in this order.
 
-## 0. Rebase
+## 0. Rebase ✅ done (2026-11-17)
 
-- [ ] Rebase `lotes/textmate` onto `origin/main`. Expect conflicts in `cmd/fastbelt/generate.go` and `cmd/fastbelt/main.go`.
-- [ ] Adapt the draft to the current grammar AST:
+- [x] Rebase `lotes/textmate` onto `origin/main` (`c8db26b`). The CLI conflicts were resolved in favour of main,
+  which dropped the draft's `--textMateOut` wiring, as the plan says.
+- [x] Adapt the draft to the current grammar AST:
   - `TokenDecl.Content` (regex or keyword content)
   - token modifiers
   - `grammar.KeywordValue` / `grammar.RegexpValue`
-- [ ] `go build ./... && go test ./...` pass.
+- [x] `go build ./...`, `go test -race ./...`, golangci-lint v2.14.0 and the VS Code extension build (`npm run build`) pass.
 
 ## 1. Regex handling (`internal/generator/regexp_utils.go`)
 
