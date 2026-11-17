@@ -12,18 +12,30 @@ The design is in [README.md](README.md). Do the tasks roughly in this order.
   - `grammar.KeywordValue` / `grammar.RegexpValue`
 - [x] `go build ./...`, `go test -race ./...`, golangci-lint v2.14.0 and the VS Code extension build (`npm run build`) pass.
 
-## 1. Regex handling (`internal/generator/regexp_utils.go`)
+## 1. Regex handling (`internal/generator/regexp_utils.go`) ✅ done (2026-11-17)
 
-- [ ] Rewrite begin/end extraction on `regexp/syntax`. Fix these bugs:
-  - [ ] `OpQuest`: the skip branch is lost because `splitInst` is appended by value.
-  - [ ] Panic on `^`, `$`, `\A`, `\z`, `\b`, `\B`: the code reads `Sub[0]` on nodes that have no children.
-  - [ ] `a+` must keep its required leading `a`.
-  - [ ] Return parse errors instead of `nil`.
-- [ ] Re-emit Oniguruma regex from the `syntax.Regexp` tree:
-  - [ ] `(?P<name>…)` → `(?<name>…)`
-  - [ ] Check flag semantics: `(?s)`, `(?m)`, `(?U)`, `(?i)`
-  - [ ] Character class escaping
-- [ ] Unit tests for each case above.
+- [x] Rewrite begin/end extraction on `regexp/syntax`: `SplitDelimiters(pattern) ([]Delimiters, error)` replaces the
+  VM-based `GetTerminalParts`. It expands alternatives in source order, removes duplicates, and returns
+  `ErrTooManyAlternatives` above 32 alternatives.
+  - [x] `OpQuest`: optional parts now count as variable, so no branch is lost.
+  - [x] No panic on `^`, `$`, `\A`, `\z`, `\b`, `\B`. These are zero-width parts of the begin/end.
+    Assertions alone never form a delimiter.
+  - [x] `x+` keeps its required leading `x` (`a+b` → begin `a`, end `b`).
+  - [x] Parse errors are returned.
+- [x] Re-emit Oniguruma regex from the `syntax.Regexp` tree with `ToOniguruma(pattern) (string, error)`:
+  - [x] `(?P<name>…)` → `(?<name>…)`
+  - [x] Flags are resolved by the Go parser:
+    - `(?s).` → `[\s\S]`
+    - `(?m)` → `^`/`$`; without it → `\A`/`\z`
+    - `(?U)` flips greediness
+    - `(?i)` literal → `(?i:…)`
+  - [x] Character class escaping, including `&` because `&&` is class intersection in Oniguruma.
+    Negated classes are emitted as `[^…]` when that is shorter. Control characters are written as `\x{…}`.
+- [x] Unit tests for each case above (`regexp_utils_test.go`).
+- [x] One-off check against real `vscode-oniguruma`: for 36 pattern/input pairs, the converted pattern matches the
+  same text as Go. Not committed; it would need npm in the Go tests.
+- Note: the TextMate generator now uses `SplitDelimiters`, but its `match` patterns (keywords) still use
+  `regexp.QuoteMeta`. Task 3/4 switches them to `ToOniguruma`.
 
 ## 2. Mode model for TextMate
 
