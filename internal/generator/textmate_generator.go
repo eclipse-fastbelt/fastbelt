@@ -94,6 +94,7 @@ func GenerateTextMateCommon(grammr grammar.Grammar, entryRules []grammar.ParserR
 			return TextMateCommonResult{}, err
 		}
 	}
+	g.checkOverrides()
 	for _, language := range g.model.Languages {
 		if language.Entry != "" {
 			g.repository[language.Entry] = Pattern{Patterns: []Pattern{include(modeKey(language.EntryMode))}}
@@ -108,6 +109,26 @@ func GenerateTextMateCommon(grammr grammar.Grammar, entryRules []grammar.ParserR
 		return TextMateCommonResult{}, err
 	}
 	return TextMateCommonResult{Content: content, Warnings: g.warnings}, nil
+}
+
+// checkOverrides warns about scope overrides for tokens that no mode uses.
+func (g *textMateGenerator) checkOverrides() {
+	names := map[string]bool{}
+	for _, mode := range g.model.Modes {
+		for _, token := range mode.Tokens {
+			names[token.Name] = true
+		}
+	}
+	var unknown []string
+	for name := range g.scopes.Overrides {
+		if !names[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	slices.Sort(unknown)
+	for _, name := range unknown {
+		g.warnings = append(g.warnings, fmt.Sprintf("TextMate: scope override for unknown token %s", name))
+	}
 }
 
 // marshalTextMate renders a TextMate grammar as indented JSON. Map keys are
