@@ -74,7 +74,7 @@ func TestNameWords(t *testing.T) {
 	require.Nil(t, nameWords("_"))
 }
 
-func TestKeywordsPattern(t *testing.T) {
+func TestKeywordsMatch(t *testing.T) {
 	cases := []struct {
 		name     string
 		keywords []string
@@ -96,7 +96,39 @@ func TestKeywordsPattern(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			require.Equal(t, c.want, keywordsPattern(c.keywords))
+			keywords := make([]scopedKeyword, 0, len(c.keywords))
+			for _, value := range c.keywords {
+				keywords = append(keywords, scopedKeyword{Value: value, Scope: "s"})
+			}
+			match := keywordsMatch(keywords)
+			require.Equal(t, c.want, match.Match)
+			require.Nil(t, match.Captures)
+			if c.want != "" {
+				require.Equal(t, "s", match.Name)
+			}
 		})
 	}
+}
+
+func TestKeywordsMatchWithScopes(t *testing.T) {
+	match := keywordsMatch([]scopedKeyword{
+		{Value: ":", Scope: "punctuation"},
+		{Value: ":=", Scope: "operator"},
+		{Value: "if", Scope: "control"},
+		{Value: "while", Scope: "control"},
+		{Value: "hidden"},
+	})
+	// ":=" stays before ":" although they have different scopes.
+	require.Equal(t, `\bhidden\b|(\b(?:while|if)\b)|(:=)|(:)`, match.Match)
+	require.Equal(t, "", match.Name)
+	require.Equal(t, Captures{
+		"1": {Name: "control"},
+		"2": {Name: "operator"},
+		"3": {Name: "punctuation"},
+	}, match.Captures)
+}
+
+func TestKeywordRegex(t *testing.T) {
+	require.Equal(t, `\bbegin\b`, keywordRegex("begin"))
+	require.Equal(t, `#\{`, keywordRegex("#{"))
 }

@@ -8,6 +8,7 @@ import (
 	"cmp"
 	"regexp/syntax"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -138,35 +139,104 @@ func nameWords(name string) []string {
 	return words
 }
 
-// keywordsPattern returns an Oniguruma regex that matches any of the given
-// unquoted keyword values, or "" if there are none.
+// scopedKeyword is an unquoted keyword value with its scope ("" for none).
+type scopedKeyword struct {
+	Value string
+	Scope string
+}
+
+// keywordsMatch returns a TextMate match rule for the given keywords. If all
+// keywords share a scope, the rule has that name. Otherwise every group of
+// keywords with the same scope becomes a capture with that scope, so that a
+// single regex keeps the order described below across scopes.
 //
 // A keyword gets a \b on each side that starts or ends with a word character,
 // so "in" does not match inside "int" but "+" still matches in "a+b".
 //
 // TextMate takes the first alternative that matches, while the lexer takes
 // the longest match. Keywords are therefore ordered so that a keyword always
-// comes after the longer keywords it is a prefix of. Keywords with the same
-// boundaries share one group where that order allows: \b(?:while|class|if)\b.
-func keywordsPattern(keywords []string) string {
+// comes after the longer keywords it is a prefix of (":=" before ":").
+// Keywords with the same boundaries and scope share one group where that
+// order allows: \b(?:while|class|if)\b.
+func keywordsMatch(keywords []scopedKeyword) Pattern {
+	groups := keywordGroups(keywords)
+	sameScope := true
+	for _, g := range groups {
+		sameScope = sameScope && g.scope == groups[0].scope
+	}
+	patterns := make([]string, 0, len(groups))
+	if sameScope {
+		for _, g := range groups {
+			patterns = append(patterns, g.pattern())
+		}
+		result := Pattern{Match: strings.Join(patterns, "|")}
+		if len(groups) > 0 {
+			result.Name = groups[0].scope
+		}
+		return result
+	}
+	captures := Captures{}
+	for _, g := range groups {
+		if g.scope == "" {
+			patterns = append(patterns, g.pattern())
+			continue
+		}
+		patterns = append(patterns, "("+g.pattern()+")")
+		captures[strconv.Itoa(len(captures)+1)] = Pattern{Name: g.scope}
+	}
+	return Pattern{Match: strings.Join(patterns, "|"), Captures: captures}
+}
+
+// keywordRegex returns the Oniguruma regex of a single keyword, with word
+// boundaries as in keywordsMatch.
+func keywordRegex(value string) string {
+	return keywordsMatch([]scopedKeyword{{Value: value}}).Match
+}
+
+type keywordGroup struct {
+	left, right bool // whether a \b is needed on that side
+	scope       string
+	values      []string
+}
+
+func (g *keywordGroup) pattern() string {
+	alternatives := make([]string, 0, len(g.values))
+	for _, value := range g.values {
+		alternatives = append(alternatives, onigurumaLiteral(value))
+	}
+	body := strings.Join(alternatives, "|")
+	if len(alternatives) > 1 && (g.left || g.right) {
+		body = "(?:" + body + ")"
+	}
+	if g.left {
+		body = `\b` + body
+	}
+	if g.right {
+		body += `\b`
+	}
+	return body
+}
+
+// keywordGroups orders and groups keywords as described in keywordsMatch.
+func keywordGroups(keywords []scopedKeyword) []*keywordGroup {
 	type entry struct {
-		value       string
-		left, right bool // whether a \b is needed on that side
+		scopedKeyword
+		left, right bool
 		length      int
 	}
 	seen := map[string]bool{}
 	var entries []entry
 	for _, kw := range keywords {
-		if kw == "" || seen[kw] {
+		if kw.Value == "" || seen[kw.Value] {
 			continue
 		}
-		seen[kw] = true
-		runes := []rune(kw)
+		seen[kw.Value] = true
+		runes := []rune(kw.Value)
 		entries = append(entries, entry{
-			value:  kw,
-			left:   isWordRune(runes[0]),
-			right:  isWordRune(runes[len(runes)-1]),
-			length: len(runes),
+			scopedKeyword: kw,
+			left:          isWordRune(runes[0]),
+			right:         isWordRune(runes[len(runes)-1]),
+			length:        len(runes),
 		})
 	}
 	boundaryRank := func(e entry) int {
@@ -183,55 +253,33 @@ func keywordsPattern(keywords []string) string {
 		return cmp.Or(
 			cmp.Compare(b.length, a.length),
 			cmp.Compare(boundaryRank(a), boundaryRank(b)),
-			strings.Compare(a.value, b.value),
+			strings.Compare(a.Scope, b.Scope),
+			strings.Compare(a.Value, b.Value),
 		)
 	})
 
-	// Each keyword joins the last group with the same boundaries, unless a
-	// group after that one holds a longer keyword starting with it.
-	type group struct {
-		left, right bool
-		values      []string
-	}
-	var groups []*group
+	// Each keyword joins the last group with the same boundaries and scope,
+	// unless a group after that one holds a longer keyword starting with it.
+	var groups []*keywordGroup
 	for _, e := range entries {
-		var target *group
+		var target *keywordGroup
 		for i := len(groups) - 1; i >= 0; i-- {
 			g := groups[i]
-			if g.left == e.left && g.right == e.right {
+			if g.left == e.left && g.right == e.right && g.scope == e.Scope {
 				target = g
 				break
 			}
-			if slices.ContainsFunc(g.values, func(v string) bool { return strings.HasPrefix(v, e.value) }) {
+			if slices.ContainsFunc(g.values, func(v string) bool { return strings.HasPrefix(v, e.Value) }) {
 				break
 			}
 		}
 		if target == nil {
-			target = &group{left: e.left, right: e.right}
+			target = &keywordGroup{left: e.left, right: e.right, scope: e.Scope}
 			groups = append(groups, target)
 		}
-		target.values = append(target.values, e.value)
+		target.values = append(target.values, e.Value)
 	}
-
-	patterns := make([]string, 0, len(groups))
-	for _, g := range groups {
-		alternatives := make([]string, 0, len(g.values))
-		for _, value := range g.values {
-			alternatives = append(alternatives, onigurumaLiteral(value))
-		}
-		body := strings.Join(alternatives, "|")
-		if len(alternatives) > 1 && (g.left || g.right) {
-			body = "(?:" + body + ")"
-		}
-		if g.left {
-			body = `\b` + body
-		}
-		if g.right {
-			body += `\b`
-		}
-		patterns = append(patterns, body)
-	}
-	return strings.Join(patterns, "|")
+	return groups
 }
 
 // isWordRune reports whether r is a word character for Oniguruma's \b, which
