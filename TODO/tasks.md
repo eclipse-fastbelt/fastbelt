@@ -181,19 +181,35 @@ and compares the produced file set and contents with `cmd/testdata/textmate/<cas
 - [x] One-off check of the arithmetics and strings goldens with real `vscode-textmate` (not committed). Every token
   in the sample lines got the expected scope.
 
-## 8. VS Code extensions (`internal/vscode-extensions`)
+## 8. VS Code extensions (`internal/vscode-extensions`) ✅ done (2026-11-17)
 
-- [ ] arithmetics and statemachine:
-  - [ ] Change `examples/arithmetics` and `examples/statemachine` from the CLI `go:generate` line to a
-    `gen/main.go` with `cmd.BuildContext` (one `Language` each, `TextMateOutput` pointing at the extension's `syntaxes/`).
-    Keep the existing `--atn` option for statemachine (`BuildContext.ATN`).
-  - [ ] Generate `syntaxes/arithmetics-common.tmLanguage.json` + `syntaxes/arithmetics.tmLanguage.json`
-    (and the same for statemachine).
-  - [ ] The selector is now generated into `services_gen.go`. Remove the hand-written
-    `sc.Put[core.LanguageSelector]` from their `services.go` so the ID is declared in one place (Q18: agreed).
-  - [ ] Delete the hand-written files those replace.
-  - [ ] Edit `package.json` by hand: add a `grammars` entry for the common file (`scopeName` + `path`, no `language`).
-- [ ] `fastbelt` (the grammar language): keep the hand-written `data/fastbelt.tmLanguage.json`.
+- [x] arithmetics and statemachine:
+  - [x] `examples/<x>/gen/main.go` with `cmd.BuildContext`; `go:generate go run ./gen`.
+    - Same language ID and `**/*.calc` / `**/*.statemachine` patterns as the hand-written selectors.
+    - `TextMateOutput: ../../internal/vscode-extensions/<x>/syntaxes`.
+    - arithmetics: `TextMateScopes{"SL_COMMENT": "comment.line"}`. statemachine: `ATN: true`.
+  - [x] Generated `syntaxes/arithmetics-common.tmLanguage.json` + `arithmetics.tmLanguage.json`, and
+    `statemachinemodel-common.tmLanguage.json` + `statemachine.tmLanguage.json`. The common file is named after the
+    grammar (`StatemachineModel`), not the language.
+  - [x] Removed the hand-written `sc.Put[core.LanguageSelector]` from both `services.go`. The only Go change from
+    regenerating is that `services_gen.go` now registers the same selector.
+  - [x] The hand-written `<id>.tmLanguage.json` files are overwritten by the generated ones (same names).
+  - [x] `package.json`: added a `grammars` entry for each common file (`scopeName` + `path`, no `language`).
+  - [x] `TestTextMateGolden` compares the arithmetics and statemachine cases with the extensions' `syntaxes/`
+    (same config as the `gen/main.go`), so it also fails when they are out of date. Their testdata copies were removed.
+    `-update` only replaces `*.tmLanguage.json` in those directories.
+- [x] `fastbelt` (the grammar language): keep the hand-written `data/fastbelt.tmLanguage.json`. It highlights the
+  inside of regex literals (classes, escapes, groups), which a one-scope-per-token generator cannot do.
+  - Possible follow-up: generate `fastbelt-common` and keep only a small hand-written file that puts the regex
+    rules first and includes `source.fastbelt-common#Grammar`, so keywords follow `grammar.fb`.
+- [x] Lint workaround: staticcheck v0.8.1 (golangci-lint v2.14.0, also used by CI) panicked in SA4023
+  (`nilness.go:77`, index out of range) on `examples/arithmetics/cli` once the generated selector code was in the
+  package. It is triggered by `x, err := sc.Get[T](); if err != nil`, apparently a mix-up of facts between the Go 1.27
+  generic methods `Has`/`Get`. The CLI now uses `sc.MustGet`, with a comment. Worth reporting upstream.
+- [x] Checks:
+  - `go test -race ./...`, golangci-lint and `npm run build` pass.
+  - One-off `vscode-textmate` run (not committed) over `example.calc` and `example.statemachine`, with the grammars
+    loaded through `package.json`: keywords, punctuation, operators, numbers and `//` comments as expected.
 
 ## 9. Scaffold (`internal/scaffold`)
 
