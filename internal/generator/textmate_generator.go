@@ -7,7 +7,6 @@ package generator
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"typefox.dev/fastbelt/internal/grammar"
@@ -47,9 +46,8 @@ type Pattern struct {
 type Captures = map[string]Pattern
 
 type TextMateGeneratorConfig struct {
-	Id              string
-	FileExtensions  []string
-	CaseInsensitive bool
+	Id             string
+	FileExtensions []string
 }
 
 func GenerateTextMate(grammar grammar.Grammar, config TextMateGeneratorConfig) string {
@@ -136,74 +134,16 @@ func GetRepository(grammar grammar.Grammar, config TextMateGeneratorConfig) Repo
 }
 
 func GetControlKeywords(grammr grammar.Grammar, config TextMateGeneratorConfig) Pattern {
-	regex := regexp.MustCompile(`[A-Za-z]`)
-	controlKeywords := []grammar.Keyword{}
+	controlKeywords := []string{}
 	for _, keyword := range GetAllKeywords(grammr).Keywords {
-		if regex.MatchString(grammar.KeywordValue(keyword)) {
-			controlKeywords = append(controlKeywords, keyword)
+		if value := grammar.KeywordValue(keyword); keywordScope(value) == "keyword.control" {
+			controlKeywords = append(controlKeywords, value)
 		}
 	}
-	groups := GroupKeywords(controlKeywords)
 	return Pattern{
 		Name:  fmt.Sprintf(`keyword.control.%s`, config.Id),
-		Match: fmt.Sprintf(`%s%s`, ifThenElse(config.CaseInsensitive, `(?i)`, ``), strings.Join(groups, "|")),
+		Match: keywordsPattern(controlKeywords),
 	}
-}
-
-func ifThenElse(condition bool, trueValue string, falseValue string) string {
-	if condition {
-		return trueValue
-	} else {
-		return falseValue
-	}
-}
-
-type group struct {
-	letter       []string
-	leftSpecial  []string
-	rightSpecial []string
-	special      []string
-}
-
-func GroupKeywords(keywords []grammar.Keyword) []string {
-	groups := group{
-		letter:       []string{},
-		leftSpecial:  []string{},
-		rightSpecial: []string{},
-		special:      []string{},
-	}
-
-	for _, keyword := range keywords {
-		keywordPattern := regexp.QuoteMeta(keyword.Text())
-		if regexp.MustCompile(`\w`).MatchString(string(keyword.Text()[0])) {
-			if regexp.MustCompile(`\w`).MatchString(string(keyword.Text()[len(keyword.Text())-1])) {
-				groups.letter = append(groups.letter, keywordPattern)
-			} else {
-				groups.rightSpecial = append(groups.rightSpecial, keywordPattern)
-			}
-		} else {
-			if regexp.MustCompile(`\w`).MatchString(string(keyword.Text()[len(keyword.Text())-1])) {
-				groups.leftSpecial = append(groups.leftSpecial, keywordPattern)
-			} else {
-				groups.special = append(groups.special, keywordPattern)
-			}
-		}
-	}
-
-	res := []string{}
-	if len(groups.letter) > 0 {
-		res = append(res, fmt.Sprintf(`\b(%s)\b`, strings.Join(groups.letter, "|")))
-	}
-	if len(groups.leftSpecial) > 0 {
-		res = append(res, fmt.Sprintf(`\B(%s)\b`, strings.Join(groups.leftSpecial, "|")))
-	}
-	if len(groups.rightSpecial) > 0 {
-		res = append(res, fmt.Sprintf(`\b(%s)\B`, strings.Join(groups.rightSpecial, "|")))
-	}
-	if len(groups.special) > 0 {
-		res = append(res, fmt.Sprintf(`\B(%s)\B`, strings.Join(groups.special, "|")))
-	}
-	return res
 }
 
 func GetStringPatterns(grammr grammar.Grammar, config TextMateGeneratorConfig) []Pattern {

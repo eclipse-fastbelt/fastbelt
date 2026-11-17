@@ -30,9 +30,8 @@ func TestTextmateGenerator(t *testing.T) {
 	` + commonTokens)
 	grammar := test.MustFindNode[grammar.Grammar](doc)
 	content := GenerateTextMate(grammar, TextMateGeneratorConfig{
-		Id:              "fastbelt",
-		FileExtensions:  []string{".fb"},
-		CaseInsensitive: false,
+		Id:             "fastbelt",
+		FileExtensions: []string{".fb"},
 	})
 	require.Equal(t, `{
   "repository": {
@@ -73,7 +72,7 @@ func TestTextmateGenerator(t *testing.T) {
     },
     {
       "name": "keyword.control.fastbelt",
-      "match": "\\B(\"foo\")\\B"
+      "match": "\\bfoo\\b"
     }
   ],
   "fileTypes": [
