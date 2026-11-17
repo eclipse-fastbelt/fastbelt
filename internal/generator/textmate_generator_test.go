@@ -17,10 +17,7 @@ import (
 // with all entry rules of the grammar as languages.
 func generateTextMateCommonFor(t *testing.T, src string, entryModes []string, overrides map[string]string) (TextMateGrammar, TextMateCommonResult) {
 	t.Helper()
-	f := test.New(t, grammar.CreateServices())
-	doc := f.Parse(src)
-	grammr, ok := doc.Document.Root.(grammar.Grammar)
-	require.True(t, ok)
+	grammr := parseGrammar(t, src)
 	var entryRules []grammar.ParserRule
 	for _, rule := range grammr.Rules() {
 		if rule.IsEntry() {
@@ -347,4 +344,64 @@ func TestTextMateCommonDeterministic(t *testing.T) {
 	}
 	// HTML characters are not escaped.
 	require.Contains(t, first.Content, `(&&|<)`)
+}
+
+func parseGrammar(t *testing.T, src string) grammar.Grammar {
+	t.Helper()
+	f := test.New(t, grammar.CreateServices())
+	doc := f.Parse(src)
+	grammr, ok := doc.Document.Root.(grammar.Grammar)
+	require.True(t, ok)
+	return grammr
+}
+
+func TestTextMateLanguage(t *testing.T) {
+	grammr := parseGrammar(t, `
+		grammar MultilangModel;
+		interface Greeting { Name string }
+		entry Greeting: "hello" Name=ID;
+		token ID: /[a-z]+/;
+	`)
+	content, err := GenerateTextMateLanguage(grammr, "Greeting", Selector{LanguageID: "hello", Patterns: []string{"*.hello", "**/*.hi"}})
+	require.NoError(t, err)
+	require.Equal(t, `{
+  "name": "hello",
+  "scopeName": "source.hello",
+  "fileTypes": [
+    "hello",
+    "hi"
+  ],
+  "patterns": [
+    {
+      "include": "source.multilangmodel-common#Greeting"
+    }
+  ]
+}
+`, content)
+	require.Equal(t, "multilangmodel-common.tmLanguage.json", TextMateCommonFileName(grammr))
+	require.Equal(t, "hello.tmLanguage.json", TextMateLanguageFileName("hello"))
+}
+
+func TestTextMateLanguageWithoutPatterns(t *testing.T) {
+	grammr := parseGrammar(t, `grammar Test; token ID: /[a-z]+/;`)
+	content, err := GenerateTextMateLanguage(grammr, "Foo", Selector{LanguageID: "test"})
+	require.NoError(t, err)
+	require.NotContains(t, content, "fileTypes")
+}
+
+func TestTextMateLanguageErrors(t *testing.T) {
+	grammr := parseGrammar(t, `grammar Test; token ID: /[a-z]+/;`)
+	_, err := GenerateTextMateLanguage(grammr, "", Selector{LanguageID: "test"})
+	require.Error(t, err)
+	_, err = GenerateTextMateLanguage(grammr, "Foo", Selector{})
+	require.Error(t, err)
+}
+
+func TestTextMateFileTypes(t *testing.T) {
+	require.Nil(t, textMateFileTypes(nil))
+	require.Equal(t, []string{"calc", "c", "h", "tar.gz"}, textMateFileTypes([]string{
+		"*.calc", "**/*.calc", "*.{c,h}", "*.tar.gz",
+		// Not simple extensions:
+		"Makefile", "src/*.x", "*.{a,}", "*.{a,b", "*.[ch]", "*.x*", "foo.*",
+	}))
 }

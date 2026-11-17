@@ -415,3 +415,71 @@ func hasBackslashLiteral(re *syntax.Regexp) bool {
 	}
 	return slices.ContainsFunc(re.Sub, hasBackslashLiteral)
 }
+
+// TextMateCommonFileName returns the file name of the common TextMate grammar
+// of grammr: <grammar>-common.tmLanguage.json.
+func TextMateCommonFileName(grammr grammar.Grammar) string {
+	return TextMateGrammarName(grammr) + "-common.tmLanguage.json"
+}
+
+// TextMateLanguageFileName returns the file name of the TextMate grammar of a
+// language: <languageID>.tmLanguage.json.
+func TextMateLanguageFileName(languageID string) string {
+	return languageID + ".tmLanguage.json"
+}
+
+// GenerateTextMateLanguage generates the TextMate grammar of one language of
+// grammr, with scope name source.<languageID>. It only includes the language's
+// entry from the common grammar (see GenerateTextMateCommon). entry is the
+// name of the language's entry rule.
+//
+// fileTypes lists the extensions of the selector patterns that are simple
+// extension globs (see textMateFileTypes). VS Code ignores it and uses the
+// languages contribution of package.json instead.
+func GenerateTextMateLanguage(grammr grammar.Grammar, entry string, selector Selector) (string, error) {
+	if entry == "" {
+		return "", errors.New("TextMate: a language needs an entry rule")
+	}
+	if selector.LanguageID == "" {
+		return "", fmt.Errorf("TextMate: language with entry %s has no language id", entry)
+	}
+	return marshalTextMate(TextMateGrammar{
+		Name:      selector.LanguageID,
+		ScopeName: "source." + selector.LanguageID,
+		FileTypes: textMateFileTypes(selector.Patterns),
+		Patterns:  []Pattern{{Include: "source." + TextMateGrammarName(grammr) + "-common#" + entry}},
+	})
+}
+
+// textMateFileTypes returns the extensions (without the dot) of the patterns
+// of the forms *.ext, **/*.ext and *.{ext1,ext2}, in order and without
+// duplicates. Other patterns are skipped.
+func textMateFileTypes(patterns []string) []string {
+	var result []string
+	for _, pattern := range patterns {
+		rest, ok := strings.CutPrefix(pattern, "**/")
+		if !ok {
+			rest = pattern
+		}
+		rest, ok = strings.CutPrefix(rest, "*.")
+		if !ok {
+			continue
+		}
+		extensions := []string{rest}
+		if inner, ok := strings.CutPrefix(rest, "{"); ok {
+			if inner, ok = strings.CutSuffix(inner, "}"); !ok {
+				continue
+			}
+			extensions = strings.Split(inner, ",")
+		}
+		if slices.ContainsFunc(extensions, func(ext string) bool { return ext == "" || strings.ContainsAny(ext, `*?[]{}\/,!`) }) {
+			continue
+		}
+		for _, ext := range extensions {
+			if !slices.Contains(result, ext) {
+				result = append(result, ext)
+			}
+		}
+	}
+	return result
+}

@@ -121,11 +121,17 @@ in `internal/generator/textmate_generator.go` replaces the draft. `TextMateGramm
   on the token_modes grammar and a basic grammar (not committed). Nested interpolation, multi-line comments,
   escapes, `//` vs `/`, and `iffy` vs `if` all tokenize as expected.
 
-## 5. Language file generator
+## 5. Language file generator ✅ done (2026-11-17)
 
-- [ ] `<languageID>.tmLanguage.json`: `name`, `scopeName: source.<languageID>`,
-  `patterns: [{include: "source.<grammar>-common#<EntryRule>"}]`.
-  `fileTypes` comes from the language patterns where they are simple extensions; VS Code ignores it anyway.
+- [x] `GenerateTextMateLanguage(grammar, entry, Selector) (string, error)` writes `<languageID>.tmLanguage.json`:
+  - `name: <languageID>`, `scopeName: source.<languageID>`
+  - `patterns: [{include: "source.<grammar>-common#<EntryRule>"}]`
+  - `fileTypes` comes from the selector patterns `*.ext`, `**/*.ext` and `*.{a,b}`. It is written without the dot,
+    as is the TextMate convention (the draft wrote `.fb`). Other globs are skipped, and the field is left out
+    when none match.
+  - An empty entry or language ID is an error.
+- [x] File name helpers for task 6: `TextMateCommonFileName(grammar)`, `TextMateLanguageFileName(languageID)`.
+- [x] Tests in `textmate_generator_test.go`.
 
 ## 6. Wiring
 
