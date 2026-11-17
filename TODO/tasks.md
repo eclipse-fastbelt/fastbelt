@@ -133,12 +133,23 @@ in `internal/generator/textmate_generator.go` replaces the draft. `TextMateGramm
 - [x] File name helpers for task 6: `TextMateCommonFileName(grammar)`, `TextMateLanguageFileName(languageID)`.
 - [x] Tests in `textmate_generator_test.go`.
 
-## 6. Wiring
+## 6. Wiring ✅ done (2026-11-17)
 
-- [ ] `cmd.BuildContext`: add `TextMateOutput string` and `TextMateScopes map[string]string`, and pass them to `cmd.Generate`.
-- [ ] Language ID, entry rule and entry mode for each TextMate file come from `BuildContext.Languages`.
-- [ ] `fastbelt generate` CLI: remove the draft's `--textMateOut` flag (`cmd/fastbelt/main.go`, `generate.go`). Add no new flags.
-- [ ] Remove the draft's use of `grammar.CreateServices()` for the ID and extensions.
+- [x] `cmd.BuildContext`: `TextMateOutput string` (a directory, relative to the working directory like `Input`/`Output`;
+  empty = no TextMate files) and `TextMateScopes map[string]string`, both documented on the fields.
+- [x] `cmd.Generate` now takes `GenerateOptions{ATN, Railroad, Verbose, TextMateOutput, TextMateScopes}` instead of
+  three positional bools. This changes the signature of an exported function; the only other caller is the CLI.
+  It writes `<grammar>-common.tmLanguage.json` and one `<languageID>.tmLanguage.json` per language, and prints the
+  generator's warnings as `Warning: …`. Without one selector per entry it returns an error.
+- [x] Language ID, entry rule and entry mode come from `BuildContext.Languages` (`entries`, `entryModes`, `selectors`).
+  - When `TextMateOutput` is set, `Build` rejects language IDs containing `/` or `\`, and an ID whose file name would
+    overwrite the common file (`<grammar>-common`).
+  - Overrides for token names that no mode uses produce a warning.
+- [x] `fastbelt generate` CLI: the draft's `--textMateOut` flag had already gone in the rebase; only the `Generate`
+  call changed. No new flags.
+- [x] The draft's `grammar.CreateServices()` lookup had already gone in the rebase as well.
+- [x] Tests: three `TestBuild…TextMate…` tests in `cmd/build_test.go` and
+  `TestTextMateCommonWarnsAboutUnknownOverrides`. `go generate ./...` changes no files.
 
 ## 7. Tests
 

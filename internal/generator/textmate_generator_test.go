@@ -405,3 +405,17 @@ func TestTextMateFileTypes(t *testing.T) {
 		"Makefile", "src/*.x", "*.{a,}", "*.{a,b", "*.[ch]", "*.x*", "foo.*",
 	}))
 }
+
+func TestTextMateCommonWarnsAboutUnknownOverrides(t *testing.T) {
+	_, result := generateTextMateCommonFor(t, `
+		grammar Test;
+		interface Foo { Name string }
+		entry Foo: Name=ID;
+		token ID: /[a-z]+/;
+	`, nil, map[string]string{"ID": "variable", "Nope": "x", "Also": "y"})
+
+	require.Equal(t, []string{
+		"TextMate: scope override for unknown token Also",
+		"TextMate: scope override for unknown token Nope",
+	}, result.Warnings)
+}
