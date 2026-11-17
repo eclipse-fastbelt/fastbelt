@@ -5,7 +5,6 @@
 package arithmetics
 
 import (
-	core "typefox.dev/fastbelt"
 	"typefox.dev/fastbelt/linking"
 	"typefox.dev/fastbelt/textdoc"
 	"typefox.dev/fastbelt/util/service"
@@ -14,11 +13,6 @@ import (
 
 // SetupServices sets up the base services for the arithmetics language.
 func SetupServices(sc *service.Container) {
-	sc.Put[core.LanguageSelector](
-		workspace.NewDefaultLanguageSelector(sc,
-			workspace.NewDocumentMatcherWithPatterns("arithmetics", "**/*.calc"),
-		),
-	)
 	textdoc.SetupDefaultServices(sc)
 	linking.SetupDefaultServices(sc)
 	workspace.SetupDefaultServices(sc)

@@ -24,6 +24,9 @@
       "language": "statemachine",
       "scopeName": "source.statemachine",
       "path": "./syntaxes/statemachine.tmLanguage.json"
+    }, {
+      "scopeName": "source.statemachinemodel-common",
+      "path": "./syntaxes/statemachinemodel-common.tmLanguage.json"
     }]
   },
   "scripts": {

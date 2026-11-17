@@ -17,7 +17,8 @@ import (
 var update = flag.Bool("update", false, "rewrite the golden files in testdata")
 
 // TestTextMateGolden builds the TextMate grammars of several languages and
-// compares them with the files in testdata/textmate/<case>. Run
+// compares them with the files in testdata/textmate/<case>, or for the
+// example languages with the files of their VS Code extension. Run
 // "go test ./cmd -run TestTextMateGolden -update" to rewrite them.
 func TestTextMateGolden(t *testing.T) {
 	cases := []struct {
@@ -25,6 +26,8 @@ func TestTextMateGolden(t *testing.T) {
 		input     string
 		languages []Language
 		scopes    map[string]string
+		// golden is the directory of the expected files, testdata/textmate/<name> if empty.
+		golden string
 	}{
 		{
 			// Several files, two languages with declared per-language modes.
@@ -42,16 +45,20 @@ func TestTextMateGolden(t *testing.T) {
 			languages: []Language{{Entry: "Model", LanguageID: "tokenmodes", Patterns: []string{"*.tokenmodes"}}},
 		},
 		{
+			// Same configuration as examples/arithmetics/gen/main.go, so this
+			// also fails when the extension's grammars are out of date.
 			name:      "arithmetics",
 			input:     "../examples/arithmetics",
-			languages: []Language{{Entry: "Module", LanguageID: "arithmetics", Patterns: []string{"*.calc"}}},
-			// SL_COMMENT is hidden, so it only gets a scope through an override.
-			scopes: map[string]string{"SL_COMMENT": "comment.line"},
+			languages: []Language{{Entry: "Module", LanguageID: "arithmetics", Patterns: []string{"**/*.calc"}}},
+			scopes:    map[string]string{"SL_COMMENT": "comment.line"},
+			golden:    "../internal/vscode-extensions/arithmetics/syntaxes",
 		},
 		{
+			// Same configuration as examples/statemachine/gen/main.go.
 			name:      "statemachine",
 			input:     "../examples/statemachine",
-			languages: []Language{{Entry: "Statemachine", LanguageID: "statemachine", Patterns: []string{"*.statemachine"}}},
+			languages: []Language{{Entry: "Statemachine", LanguageID: "statemachine", Patterns: []string{"**/*.statemachine"}}},
+			golden:    "../internal/vscode-extensions/statemachine/syntaxes",
 		},
 		{
 			// Strings with and without escapes, multi-line tokens and overrides.
@@ -74,11 +81,17 @@ func TestTextMateGolden(t *testing.T) {
 			}
 			require.NoError(t, ctx.Build())
 
-			golden := filepath.Join("testdata", "textmate", c.name)
+			golden := c.golden
+			if golden == "" {
+				golden = filepath.Join("testdata", "textmate", c.name)
+			}
 			generated := tmLanguageFiles(t, out)
 			if *update {
-				require.NoError(t, os.RemoveAll(golden))
 				require.NoError(t, os.MkdirAll(golden, 0755))
+				// Only remove the TextMate grammars; the extension directories hold other files.
+				for _, name := range tmLanguageFiles(t, golden) {
+					require.NoError(t, os.Remove(filepath.Join(golden, name)))
+				}
 				for _, name := range generated {
 					content, err := os.ReadFile(filepath.Join(out, name))
 					require.NoError(t, err)
