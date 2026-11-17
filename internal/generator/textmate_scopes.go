@@ -29,8 +29,8 @@ type textMateScopes struct {
 // SplitDelimiters); it is the zero value for tokens emitted as a single match.
 //
 // The heuristic, in order:
-//   - hidden tokens never get a scope, not even with an override
 //   - an override for the token name wins
+//   - hidden tokens get no scope
 //   - comment tokens are comment.block if part has an end delimiter, else comment.line
 //   - keywords with letters are keyword.control; punctuation is
 //     punctuation.terminator / .separator / .section, other symbols keyword.operator
@@ -39,11 +39,11 @@ type textMateScopes struct {
 //   - names with a word like INT, NUMBER or FLOAT are constant.numeric
 //   - everything else (e.g. ID) gets no scope
 func (s textMateScopes) scopeOf(token textMateToken, part Delimiters) string {
-	if token.Modifier == "hidden" {
-		return ""
-	}
 	if scope, ok := s.Overrides[token.Name]; ok {
 		return s.withSuffix(scope)
+	}
+	if token.Modifier == "hidden" {
+		return ""
 	}
 	return s.withSuffix(heuristicScope(token, part))
 }

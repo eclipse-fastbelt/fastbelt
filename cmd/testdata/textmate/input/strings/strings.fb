@@ -1,0 +1,31 @@
+// Test grammar for the TextMate golden test (cmd/textmate_golden_test.go):
+// string tokens with and without escapes, multi-line strings and comments,
+// keyword ordering and scope overrides.
+grammar Strings
+
+interface Model {
+    Items []Item
+}
+
+interface Item {
+    Name string
+    Value string
+}
+
+entry Model: Items+=Item*
+
+Item:
+    "let" Name=ID ":=" Value=STRING ";"
+    | "let!" Name=ID ":=" Value=RAW_STRING ";"
+    | "const" Name=ID ":" Value=CHAR ";"
+    | "const" Name=ID ":" Value=NUMBER ";"
+
+token ID: /[_a-zA-Z][\w]*/
+token NUMBER: /[0-9]+(\.[0-9]+)?/
+token STRING: /"(\\.|[^"\\])*"/
+token RAW_STRING: /`[^`]*`/
+token CHAR: /'[^']'/
+
+hidden token WS: /\s+/
+hidden token DIRECTIVE: /#[a-z]+/
+comment token COMMENT: /--[^\n]*|\{-[\s\S]*?-\}/

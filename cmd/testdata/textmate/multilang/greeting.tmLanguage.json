@@ -1,0 +1,12 @@
+{
+  "name": "greeting",
+  "scopeName": "source.greeting",
+  "fileTypes": [
+    "hello"
+  ],
+  "patterns": [
+    {
+      "include": "source.multilangmodel-common#Greeting"
+    }
+  ]
+}

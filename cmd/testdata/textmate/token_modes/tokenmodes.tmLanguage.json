@@ -1,0 +1,12 @@
+{
+  "name": "tokenmodes",
+  "scopeName": "source.tokenmodes",
+  "fileTypes": [
+    "tokenmodes"
+  ],
+  "patterns": [
+    {
+      "include": "source.tokenmodes-common#Model"
+    }
+  ]
+}

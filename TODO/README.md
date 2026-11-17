@@ -76,7 +76,8 @@ One common TextMate file per grammar directory, plus one thin file per language:
 ### Modifiers per mode (Q14)
 
 - One repository entry per (token, modifier) combination: `token_X` and `token_X_comment`.
-- `hidden` never gets a scope.
+- `hidden` gets no scope from the heuristic, only through an override (changed in task 7: arithmetics' hidden
+  `SL_COMMENT` needs `comment.line`).
 
 ### Scopes (Q7, Q16, Q17)
 
