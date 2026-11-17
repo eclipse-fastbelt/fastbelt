@@ -62,12 +62,27 @@ The design is in [README.md](README.md). Do the tasks roughly in this order.
 - Note: keyword `Name`s come from `grammar.KeywordName`. Letters keep their case (`hello`), punctuation is named
   (`Semicolon`, `RightBrace`). Task 4 uses them for repository keys of tokens with commands.
 
-## 3. Scopes
+## 3. Scopes ✅ done (2026-11-17)
 
-- [ ] Heuristic scope function: (token or keyword, modifier, name, multiline?) → scope or none. Rules are in README "Scopes".
-- [ ] Keyword grouping by word boundaries, ported from the draft but using the **unquoted** keyword value.
-  Sort alternatives by length, longest first, to approximate the lexer's longest-match behaviour.
-- [ ] `BuildContext.TextMateScopes map[string]string` overrides the heuristic.
+- [x] Heuristic scope function `textMateScopes.scopeOf(token, Delimiters)` in `internal/generator/textmate_scopes.go`.
+  It returns a scope with the `.<grammar>` suffix, or `""`. The rules, in order:
+  - `hidden` never gets a scope, not even with an override.
+  - An override for the token name.
+  - `comment` → `comment.block` if the split has an end, else `comment.line`.
+  - Keywords with letters → `keyword.control`; `;` → `punctuation.terminator`; only `,.:` → `punctuation.separator`;
+    only `(){}[]` → `punctuation.section`; other symbols → `keyword.operator`.
+  - Name words (split at `_`, digits and camelCase, so `POINT` does not match `INT`):
+    `STRING`/`STR` → `string.quoted.{double,single,backtick,other}`, chosen by the begin delimiter;
+    `INT`/`INTEGER`/`NUMBER`/`NUM`/`FLOAT`/`DOUBLE`/`DECIMAL`/`REAL`/`HEX` → `constant.numeric`.
+  - Everything else (e.g. `ID`) → no scope.
+- [x] `keywordsPattern([]string) string` replaces the draft's `GroupKeywords`, which wrapped the quoted text in `\B…\B`
+  and broke `a+`. A `\b` is added only on sides that start or end with a word character (Unicode-aware, like Oniguruma).
+  Keywords are sorted longest first. Keywords with the same boundaries share a group (`\b(?:while|class|if)\b`),
+  unless that would put a keyword before a longer keyword it is a prefix of (`\bif\(|\bif\b`).
+  The draft's `CaseInsensitive` option was removed; the grammar has no case-insensitive keywords.
+- [x] Overrides: `textMateScopes.Overrides` (token name → scope without the suffix; `""` = no scope). Keywords without a
+  token declaration use their `grammar.KeywordName` (`Semicolon`). Task 6 fills it from `BuildContext.TextMateScopes`.
+- [x] Tests: `textmate_scopes_test.go`.
 
 ## 4. Common file generator
 
