@@ -1,0 +1,51 @@
+{
+  "scopeName": "source.multilangmodel-common",
+  "patterns": [],
+  "repository": {
+    "Farewell": {
+      "patterns": [
+        {
+          "include": "#mode_FarewellMode"
+        }
+      ]
+    },
+    "Greeting": {
+      "patterns": [
+        {
+          "include": "#mode_GreetingMode"
+        }
+      ]
+    },
+    "keywords_FarewellMode": {
+      "name": "keyword.control.multilangmodel",
+      "match": "\\bgoodbye\\b"
+    },
+    "keywords_GreetingMode": {
+      "name": "keyword.control.multilangmodel",
+      "match": "\\bhello\\b"
+    },
+    "mode_FarewellMode": {
+      "patterns": [
+        {
+          "include": "#keywords_FarewellMode"
+        },
+        {
+          "include": "#token_ID"
+        }
+      ]
+    },
+    "mode_GreetingMode": {
+      "patterns": [
+        {
+          "include": "#keywords_GreetingMode"
+        },
+        {
+          "include": "#token_ID"
+        }
+      ]
+    },
+    "token_ID": {
+      "match": "[A-Z_a-z][0-9A-Z_a-z]*"
+    }
+  }
+}

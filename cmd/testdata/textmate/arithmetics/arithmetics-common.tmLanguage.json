@@ -1,0 +1,68 @@
+{
+  "scopeName": "source.arithmetics-common",
+  "patterns": [],
+  "repository": {
+    "Module": {
+      "patterns": [
+        {
+          "include": "#mode_default"
+        }
+      ]
+    },
+    "keywords_default": {
+      "match": "(\\b(?:module|def)\\b)|(%|\\*|\\+|-|/|\\^)|(\\(|\\))|(,|:)|(;)",
+      "captures": {
+        "1": {
+          "name": "keyword.control.arithmetics"
+        },
+        "2": {
+          "name": "keyword.operator.arithmetics"
+        },
+        "3": {
+          "name": "punctuation.section.arithmetics"
+        },
+        "4": {
+          "name": "punctuation.separator.arithmetics"
+        },
+        "5": {
+          "name": "punctuation.terminator.arithmetics"
+        }
+      }
+    },
+    "mode_default": {
+      "patterns": [
+        {
+          "include": "#token_ML_COMMENT_comment"
+        },
+        {
+          "include": "#token_SL_COMMENT_hidden"
+        },
+        {
+          "include": "#keywords_default"
+        },
+        {
+          "include": "#token_ID"
+        },
+        {
+          "include": "#token_NUMBER"
+        }
+      ]
+    },
+    "token_ID": {
+      "match": "[A-Z_a-z][0-9A-Z_a-z]*"
+    },
+    "token_ML_COMMENT_comment": {
+      "name": "comment.block.arithmetics",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    "token_NUMBER": {
+      "name": "constant.numeric.arithmetics",
+      "match": "[0-9]+(\\.[0-9]*)?"
+    },
+    "token_SL_COMMENT_hidden": {
+      "name": "comment.line.arithmetics",
+      "match": "//[^\\n\\r]*"
+    }
+  }
+}

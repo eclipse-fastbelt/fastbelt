@@ -57,9 +57,9 @@ func TestTextMateCommonTokens(t *testing.T) {
 	require.Equal(t, "source.test-common", tm.ScopeName)
 	require.Equal(t, []Pattern{}, tm.Patterns)
 	require.Equal(t, Pattern{Patterns: includes("mode_default")}, tm.Repository["Foo"])
-	// Comments and strings, then keywords, then other tokens. WS is left out.
-	require.Equal(t, includes("token_STRING", "token_SL_COMMENT_comment", "token_ML_COMMENT_comment",
-		"keywords_default", "token_ID", "token_INT", "token_DIRECTIVE_hidden"), tm.Repository["mode_default"].Patterns)
+	// Strings, hidden tokens and comments, then keywords, then other tokens. WS is left out.
+	require.Equal(t, includes("token_STRING", "token_DIRECTIVE_hidden", "token_SL_COMMENT_comment", "token_ML_COMMENT_comment",
+		"keywords_default", "token_ID", "token_INT"), tm.Repository["mode_default"].Patterns)
 	require.NotContains(t, tm.Repository, "token_WS_hidden")
 
 	require.Equal(t, Pattern{
@@ -122,7 +122,8 @@ func TestTextMateCommonOverrides(t *testing.T) {
 		token ID: /[a-z]+/;
 		token INT: /[0-9]+/;
 		hidden token WS: /\s+/;
-	`, nil, map[string]string{"ID": "variable.other", "INT": "", "Semicolon": "punctuation.other", "WS": "invalid"})
+		hidden token NOTE: /%[a-z]*/;
+	`, nil, map[string]string{"ID": "variable.other", "INT": "", "Semicolon": "punctuation.other", "NOTE": "comment.line"})
 
 	require.Equal(t, Pattern{Match: `[a-z]+`, Name: "variable.other.test"}, tm.Repository["token_ID"])
 	require.Equal(t, Pattern{Match: `[0-9]+`}, tm.Repository["token_INT"])
@@ -130,7 +131,28 @@ func TestTextMateCommonOverrides(t *testing.T) {
 		Match:    `(\bif\b)|(;)`,
 		Captures: Captures{"1": {Name: "keyword.control.test"}, "2": {Name: "punctuation.other.test"}},
 	}, tm.Repository["keywords_default"])
+	// Hidden tokens get a scope only through an override.
+	require.Equal(t, Pattern{Match: `%[a-z]*`, Name: "comment.line.test"}, tm.Repository["token_NOTE_hidden"])
 	require.NotContains(t, tm.Repository, "token_WS_hidden")
+}
+
+// A hidden line comment must win over a "/" keyword, like in arithmetics.
+func TestTextMateCommonHiddenCommentBeforeKeywords(t *testing.T) {
+	tm, _ := generateTextMateCommonFor(t, `
+		grammar Test;
+		interface Foo { Name string }
+		entry Foo: Name=ID "/" ID;
+		token ID: /[a-z]+/;
+		hidden token WS: /\s+/;
+		hidden token SL_COMMENT: /\/\/[^\n\r]*/;
+		hidden token ML_COMMENT: /\/\*[\s\S]*?\*\//;
+	`, nil, map[string]string{"SL_COMMENT": "comment.line"})
+
+	require.Equal(t, includes("token_SL_COMMENT_hidden", "token_ML_COMMENT_hidden", "keywords_default", "token_ID"),
+		tm.Repository["mode_default"].Patterns)
+	require.Equal(t, Pattern{Match: `//[^\n\r]*`, Name: "comment.line.test"}, tm.Repository["token_SL_COMMENT_hidden"])
+	// Without a scope, a hidden block still spans lines, so keywords inside it are not highlighted.
+	require.Equal(t, Pattern{Begin: `/\*`, End: `\*/`}, tm.Repository["token_ML_COMMENT_hidden"])
 }
 
 func TestTextMateCommonPushAndPop(t *testing.T) {

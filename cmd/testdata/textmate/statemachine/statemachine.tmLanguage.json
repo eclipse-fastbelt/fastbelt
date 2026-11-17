@@ -1,0 +1,12 @@
+{
+  "name": "statemachine",
+  "scopeName": "source.statemachine",
+  "fileTypes": [
+    "statemachine"
+  ],
+  "patterns": [
+    {
+      "include": "source.statemachinemodel-common#Statemachine"
+    }
+  ]
+}

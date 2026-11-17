@@ -77,11 +77,11 @@ func TextMateGrammarName(grammr grammar.Grammar) string {
 //   - token_<Name>[_<modifier>]_mode_<Target>_in_<Mode>: a begin/end rule for
 //     a token that switches from Mode to Target; it ends before Mode's pop tokens
 //
-// Inside a mode, the rules are ordered: mode commands, comment and string
-// tokens, keywords, other tokens. TextMate takes the leftmost match and breaks
-// ties by rule order, while the lexer takes the longest match. Putting
-// comments and strings before keywords lets "//" win over a "/" keyword, and
-// putting keywords before other tokens lets "if" win over an ID.
+// Inside a mode, the rules are ordered: mode commands, comment, hidden and
+// string tokens, keywords, other tokens. TextMate takes the leftmost match and
+// breaks ties by rule order, while the lexer takes the longest match. Putting
+// comments before keywords lets "//" win over a "/" keyword, and putting
+// keywords before other tokens lets "if" win over an ID.
 func GenerateTextMateCommon(grammr grammar.Grammar, entryRules []grammar.ParserRule, entryModes []string, tokenTypes GenerateTokenTypesResult, overrides map[string]string) (TextMateCommonResult, error) {
 	name := TextMateGrammarName(grammr)
 	g := &textMateGenerator{
@@ -212,10 +212,11 @@ func (g *textMateGenerator) generateMode(mode *textMateMode) error {
 
 // tokenRule adds the rule for a regexp token without a mode command and
 // returns its key, or "" if the token needs no rule. block reports whether the
-// token is a comment or string, which is ordered before keywords.
+// token is a comment, hidden or string token. Those are ordered before
+// keywords and may span lines.
 func (g *textMateGenerator) tokenRule(token textMateToken) (key string, block bool, err error) {
 	scope := g.scopes.scopeOf(token, Delimiters{})
-	block = token.Modifier == "comment" || isStringScope(scope)
+	block = token.Modifier != "" || isStringScope(scope) || strings.HasPrefix(scope, "comment.")
 	key = tokenKey(token)
 	if _, ok := g.repository[key]; ok {
 		return key, block, nil
@@ -224,7 +225,7 @@ func (g *textMateGenerator) tokenRule(token textMateToken) (key string, block bo
 	if err != nil {
 		return "", false, fmt.Errorf("token %s: %w", token.Name, err)
 	}
-	if token.Modifier == "hidden" && onlyWhitespace(re) {
+	if token.Modifier == "hidden" && scope == "" && onlyWhitespace(re) {
 		// Nothing would be highlighted inside whitespace anyway.
 		return "", false, nil
 	}
@@ -246,7 +247,7 @@ func isStringScope(scope string) bool {
 	return strings.HasPrefix(scope, "string.") || scope == "string"
 }
 
-// beginEndRule splits a comment or string token into begin/end rules, one per
+// beginEndRule splits a comment, hidden or string token into begin/end rules, one per
 // alternative. ok is false if the token is better emitted as a single match:
 // when no alternative has an end delimiter (e.g. line comments), or when an
 // alternative has no literal begin.

@@ -66,8 +66,8 @@ The design is in [README.md](README.md). Do the tasks roughly in this order.
 
 - [x] Heuristic scope function `textMateScopes.scopeOf(token, Delimiters)` in `internal/generator/textmate_scopes.go`.
   It returns a scope with the `.<grammar>` suffix, or `""`. The rules, in order:
-  - `hidden` never gets a scope, not even with an override.
-  - An override for the token name.
+  - An override for the token name. (Task 7: overrides now also apply to `hidden` tokens.)
+  - `hidden` gets no scope.
   - `comment` → `comment.block` if the split has an end, else `comment.line`.
   - Keywords with letters → `keyword.control`; `;` → `punctuation.terminator`; only `,.:` → `punctuation.separator`;
     only `(){}[]` → `punctuation.section`; other symbols → `keyword.operator`.
@@ -97,7 +97,7 @@ in `internal/generator/textmate_generator.go` replaces the draft. `TextMateGramm
   - `token_<Name>`, `token_<Name>_comment`, `token_<Name>_hidden`
   - Command rules: `token_<Name>[_<mod>]_push_<T>` and `token_<Name>[_<mod>]_mode_<T>_in_<Mode>`.
     The `mode` rule's end depends on the parent mode, so the parent is part of the key.
-- [x] `hidden` tokens never get a scope. They are emitted as plain `match` to consume text,
+- [x] `hidden` tokens get no scope unless overridden (task 7). They are emitted as plain `match` to consume text,
   except tokens that can only match whitespace, which are left out.
 - [x] Comment and string tokens (by modifier or scope) are split with `SplitDelimiters`. They become `begin`/`end`
   (one rule per alternative) when at least one alternative has an end delimiter, and alternatives without an end
@@ -151,12 +151,35 @@ in `internal/generator/textmate_generator.go` replaces the draft. `TextMateGramm
 - [x] Tests: three `TestBuild…TextMate…` tests in `cmd/build_test.go` and
   `TestTextMateCommonWarnsAboutUnknownOverrides`. `go generate ./...` changes no files.
 
-## 7. Tests
+## 7. Tests ✅ done (2026-11-17)
 
-- [ ] Golden test on `internal/languages/multilang`: several files, two languages, per-language modes.
-- [ ] Golden test on `internal/languages/token_modes`: push, pop, nested modes.
-- [ ] Golden tests for arithmetics and statemachine through the generated extension files.
-- [ ] A test with a string token to cover the string patterns and escapes.
+`cmd/textmate_golden_test.go` (`TestTextMateGolden`) runs `BuildContext.Build` with `TextMateOutput` for each case
+and compares the produced file set and contents with `cmd/testdata/textmate/<case>/`.
+`go test ./cmd -run TestTextMateGolden -update` rewrites them.
+
+- [x] `multilang`: several files, two languages, declared per-language modes (config copied from its `gen/main.go`).
+- [x] `token_modes`: push, pop, nested modes.
+- [x] `arithmetics` and `statemachine`: language IDs and extensions from their VS Code `package.json`.
+  arithmetics uses `SL_COMMENT → comment.line`, which its `gen/main.go` will need in task 8.
+  - For task 8: the goldens currently live in testdata, because the extensions' `syntaxes/` are still hand-written.
+    Once task 8 generates them, either point these two cases at `internal/vscode-extensions/<ext>/syntaxes`
+    or keep testdata and rely on `go generate` producing no diff.
+- [x] `strings`: a new test grammar `cmd/testdata/textmate/input/strings/strings.fb` with:
+  - a double-quoted string with escapes
+  - a multi-line backtick string
+  - a char token scoped through an override
+  - a comment with a line and a block alternative
+  - a hidden non-whitespace token
+  - `let!`/`let` and `:=`/`:` ordering
+- [x] Bug found while reviewing the goldens and fixed: arithmetics' `hidden token SL_COMMENT` was sorted after the
+  keywords, so `// x` was highlighted as two `/` operators, and it could not get a scope at all. Now:
+  - overrides apply to hidden tokens (no heuristic scope)
+  - hidden tokens, and tokens whose scope is `comment.*`/`string.*`, are sorted before keywords together with
+    comments and strings, and may become begin/end rules
+  - hidden whitespace is still left out, unless an override gives it a scope
+  - tests: `TestTextMateCommonHiddenCommentBeforeKeywords` and the updated override tests
+- [x] One-off check of the arithmetics and strings goldens with real `vscode-textmate` (not committed). Every token
+  in the sample lines got the expected scope.
 
 ## 8. VS Code extensions (`internal/vscode-extensions`)
 

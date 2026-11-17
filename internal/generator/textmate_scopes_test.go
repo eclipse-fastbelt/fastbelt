@@ -58,8 +58,9 @@ func TestScopeOfOverrides(t *testing.T) {
 	require.Equal(t, "variable.other.test", scopes.scopeOf(textMateToken{Name: "ID", Regexp: `[a-z]+`}, Delimiters{}))
 	require.Equal(t, "", scopes.scopeOf(textMateToken{Name: "INT", Regexp: `[0-9]+`}, Delimiters{}))
 	require.Equal(t, "punctuation.other.test", scopes.scopeOf(textMateToken{Name: "Semicolon", Keyword: ";"}, Delimiters{}))
-	// Hidden tokens never get a scope.
-	require.Equal(t, "", scopes.scopeOf(textMateToken{Name: "WS", Regexp: `\s+`, Modifier: "hidden"}, Delimiters{}))
+	// Hidden tokens get a scope only through an override.
+	require.Equal(t, "invalid.test", scopes.scopeOf(textMateToken{Name: "WS", Regexp: `\s+`, Modifier: "hidden"}, Delimiters{}))
+	require.Equal(t, "", scopes.scopeOf(textMateToken{Name: "SPACE", Regexp: `\s+`, Modifier: "hidden"}, Delimiters{}))
 }
 
 func TestScopeOfWithoutGrammarSuffix(t *testing.T) {
