@@ -58,7 +58,7 @@ func TestInitializerLoadsExamplesFolder(t *testing.T) {
 }
 
 func TestInitializerWalksVirtualFileSystem(t *testing.T) {
-	vfs := workspace.NewVirtualFileSystem()
+	vfs := workspace.NewVirtualFileSystemProvider()
 	write := func(path string) {
 		require.NoError(t, vfs.WriteFile(core.FileURI(path), []byte("module m")))
 	}
@@ -70,7 +70,9 @@ func TestInitializerWalksVirtualFileSystem(t *testing.T) {
 	write("/other/e.calc")          // outside the workspace folder
 
 	sc := service.NewContainer()
-	sc.Put[workspace.FileSystem](vfs)
+	fs := workspace.NewDefaultFileSystem()
+	fs.RegisterProvider(core.FileScheme, vfs)
+	sc.Put[workspace.FileSystem](fs)
 	SetupServices(sc)
 	sc.Seal()
 
@@ -90,11 +92,13 @@ func TestInitializerWalksVirtualFileSystem(t *testing.T) {
 }
 
 func TestInitializerContinuesAfterMissingFolder(t *testing.T) {
-	vfs := workspace.NewVirtualFileSystem()
+	vfs := workspace.NewVirtualFileSystemProvider()
 	require.NoError(t, vfs.WriteFile(core.FileURI("/ws/a.calc"), []byte("module m")))
 
 	sc := service.NewContainer()
-	sc.Put[workspace.FileSystem](vfs)
+	fs := workspace.NewDefaultFileSystem()
+	fs.RegisterProvider(core.FileScheme, vfs)
+	sc.Put[workspace.FileSystem](fs)
 	SetupServices(sc)
 	sc.Seal()
 
