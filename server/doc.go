@@ -55,14 +55,17 @@
 //		server.SetupDefaultServices(sc)
 //		server.SetupStdioServices(sc)
 //		sc.Seal()
+//		server.SetDefaultLogger(sc) // send log output to the client
 //		if err := server.StartLanguageServer(context.Background(), sc); err != nil {
 //			log.Fatal(err)
 //		}
 //	}
 //
 // While the server runs, the [DiagnosticsPublisher] pushes the diagnostics of
-// open documents to the client, and [SlogHandler] forwards log output to the
-// client as LSP log messages. Register a publisher created with
+// open documents to the client, and [SlogHandler] sends log records to the
+// client as LSP log messages. Call [SetDefaultLogger] to make it the
+// process-wide default logger, so that the output of the log and slog
+// packages goes to the client. Register a publisher created with
 // [NewDiagnosticsPublisherWithOptions] to cover all workspace documents, or a
 // [NoopDiagnosticsPublisher] to turn pushed diagnostics off.
 package server

@@ -24,6 +24,9 @@ func main() {
 		sc.Override(workspace.NewNoopInitializer())
 	})
 
+	// Send the output of the log and slog packages to the client.
+	server.SetDefaultLogger(sc)
+
 	// StartLanguageServer blocks on the connection until it is closed, which
 	// keeps the WASM instance alive while the worker is running.
 	if err := server.StartLanguageServer(ctx, sc); err != nil {

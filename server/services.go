@@ -6,6 +6,7 @@ package server
 
 import (
 	"log/slog"
+	"sync/atomic"
 
 	"golang.org/x/exp/jsonrpc2"
 	"typefox.dev/fastbelt/util/service"
@@ -21,6 +22,26 @@ type WorkspaceFolders struct {
 // It is assigned by [DefaultBinder.Bind] when the language server is started.
 type Connection struct {
 	Value *jsonrpc2.Connection
+	// initialized is set by SetInitialized.
+	initialized atomic.Bool
+}
+
+// Initialized reports whether the client has sent the initialize request.
+// From then on, the server may send the messages that the LSP specification
+// allows while the initialize request is pending: window/logMessage (as
+// [SlogHandler] does), window/showMessage, window/showMessageRequest and
+// telemetry/event. Other requests and notifications must wait until the
+// server has responded to initialize. Read Value only after Initialized
+// returned true, which orders the read after its assignment by the binder.
+func (c *Connection) Initialized() bool {
+	return c.initialized.Load()
+}
+
+// SetInitialized records that the client has sent the initialize request.
+// [DefaultLanguageServer.Initialize] calls it; an [lsp.Server] that handles
+// initialize itself, without delegating to it, must call it too.
+func (c *Connection) SetInitialized() {
+	c.initialized.Store(true)
 }
 
 // SetupDefaultServices sets up the default services for the language server.

@@ -60,3 +60,24 @@ func TestLanguageServerBasicLifecycle(t *testing.T) {
 		t.Errorf("Exit failed: %v", err)
 	}
 }
+
+// The connection counts as initialized once the server handled the
+// initialize request, before the initialize participants run.
+func TestConnectionInitializedByInitialize(t *testing.T) {
+	sc := service.NewContainer()
+	workspace.SetupDefaultServices(sc)
+	sc.Override(workspace.NewNoopInitializer())
+	textdoc.SetupDefaultServices(sc)
+	SetupDefaultServices(sc)
+	sc.Seal()
+	connection := sc.MustGet[*Connection]()
+	if connection.Initialized() {
+		t.Fatal("initialized before initialize")
+	}
+	if _, err := sc.MustGet[lsp.Server]().Initialize(context.Background(), &lsp.ParamInitialize{}); err != nil {
+		t.Fatal(err)
+	}
+	if !connection.Initialized() {
+		t.Fatal("not initialized after initialize")
+	}
+}

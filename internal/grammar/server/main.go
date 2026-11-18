@@ -29,6 +29,8 @@ func main() {
 	ctx := context.Background()
 	sc := CreateServices()
 
+	// Send the output of the log and slog packages to the client.
+	server.SetDefaultLogger(sc)
 	if err := server.StartLanguageServer(ctx, sc); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
