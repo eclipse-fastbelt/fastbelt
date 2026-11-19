@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -105,10 +106,17 @@ func TestTextMateGolden(t *testing.T) {
 				require.NoError(t, err)
 				got, err := os.ReadFile(filepath.Join(out, name))
 				require.NoError(t, err)
-				require.Equal(t, string(want), string(got), "%s differs; run with -update", name)
+				// git may check out the golden files with CRLF (core.autocrlf on Windows),
+				// while the generator always writes LF.
+				require.Equal(t, normalizeNewlines(want), normalizeNewlines(got), "%s differs; run with -update", name)
 			}
 		})
 	}
+}
+
+// normalizeNewlines returns content as a string with CRLF line endings replaced by LF.
+func normalizeNewlines(content []byte) string {
+	return strings.ReplaceAll(string(content), "\r\n", "\n")
 }
 
 // tmLanguageFiles returns the sorted names of the *.tmLanguage.json files in dir.
