@@ -54,6 +54,20 @@
 			]
 		},
 		{
+			"name": "Fastbelt Web Extension",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"${workspaceFolder}/internal/grammar",
+				"--extensionDevelopmentPath=${workspaceFolder}/internal/vscode-extensions/fastbelt",
+				"--extensionDevelopmentKind=web"
+			],
+			"sourceMaps": true,
+			"outFiles": [
+				"${workspaceFolder}/internal/vscode-extensions/fastbelt/dist/**/*.js"
+			]
+		},
+		{
 			"name": "Arithmetics Extension",
 			"type": "extensionHost",
 			"request": "launch",

@@ -20,7 +20,6 @@ import (
 	"typefox.dev/fastbelt/textdoc"
 	"typefox.dev/fastbelt/util"
 	"typefox.dev/fastbelt/workspace"
-	"typefox.dev/lsp"
 )
 
 const rootLongHelp = `Arithmetics CLI is a tool for working with .arithmetics documents.
@@ -126,7 +125,7 @@ func runExportCLI(opts exportOptions) error {
 	}
 
 	sc := arithmetics.CreateServices()
-	file := textdoc.NewFile(lsp.URIFromPath(inputPath), "arithmetics", 0, string(inputText))
+	file := textdoc.NewFile(core.FileURI(inputPath).DocumentURI(), "arithmetics", 0, string(inputText))
 
 	document := core.NewDocument(file)
 	documents, err := sc.Get[workspace.DocumentManager]()
@@ -199,7 +198,7 @@ func runImportCLI(opts importOptions) (err error) {
 		}
 	}()
 
-	document := core.NewDocumentFromString(string(lsp.URIFromPath(inputPath)), "arithmetics", "")
+	document := core.NewDocumentFromString(core.FileURI(inputPath).DocumentURI(), "arithmetics", "")
 	sc := arithmetics.CreateServices()
 
 	if err := util.UnmarshalAndBuildDocument(context.Background(), sc, document, file, arithmetics.ArithmeticsSyntheticFactories); err != nil {

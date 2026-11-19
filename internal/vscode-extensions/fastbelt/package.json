@@ -1,8 +1,7 @@
 {
   "name": "fastbelt-vscode",
   "publisher": "fastbelt",
-  "version": "0.1.0",
-  "preview": true,
+  "version": "0.2.2",
   "displayName": "Fastbelt",
   "description": "Support for the Fastbelt grammar language",
   "homepage": "https://pkg.go.dev/typefox.dev/fastbelt",
@@ -28,6 +27,9 @@
     "vscode": "^1.91.0"
   },
   "extensionKind": ["workspace"],
+  "capabilities": {
+    "virtualWorkspaces": true
+  },
   "contributes": {
     "languages": [{
       "id": "fastbelt",
@@ -50,13 +52,14 @@
     "dependencies": false
   },
   "main": "./dist/extension.js",
+  "browser": "./dist/extension.web.js",
   "scripts": {
     "build": "npm run check-types && node esbuild.js && npm run build-server",
     "watch": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch",
     "vscode:prepublish": "npm run check-types && node esbuild.js --production && npm run build-server",
     "check-types": "tsc --noEmit",
-    "build-server": "go build -o dist/ ../../grammar/server"
+    "build-server": "node build-wasm.js"
   },
   "dependencies": {
     "vscode-languageclient": "~9.0.1"

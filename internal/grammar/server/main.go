@@ -2,32 +2,20 @@
 // This program and the accompanying materials are made available under the
 // terms of the MIT License, which is available in the project root.
 
+//go:build !js || !wasm
+
 package main
 
 import (
 	"context"
 	"log"
 
-	"typefox.dev/fastbelt/internal/grammar"
 	"typefox.dev/fastbelt/server"
-	"typefox.dev/fastbelt/util/service"
 )
-
-// CreateServices creates a service container for the grammar language to be used in the language server.
-func CreateServices() *service.Container {
-	sc := service.NewContainer()
-	grammar.SetupServices(sc)
-	grammar.SetupGeneratedServerServices(sc)
-	sc.Put(grammar.NewHoverProvider(sc))
-	server.SetupDefaultServices(sc)
-	server.SetupStdioServices(sc)
-	sc.Seal()
-	return sc
-}
 
 func main() {
 	ctx := context.Background()
-	sc := CreateServices()
+	sc := CreateServices(server.SetupStdioServices)
 
 	// Send the output of the log and slog packages to the client.
 	server.SetDefaultLogger(sc)

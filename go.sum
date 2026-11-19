@@ -30,3 +30,7 @@ gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 typefox.dev/lsp v0.1.0 h1:gQHtK2LKpYw2ohL8jUZhJ0lc3Gx4OLTFA7poT95j6FA=
 typefox.dev/lsp v0.1.0/go.mod h1:MQ6ZIFd9xDC+jrSzj5XYTfAvFrAM5l/3BossgTTpwPg=
+typefox.dev/lsp v0.1.1-0.20261118153954-96784c0385ae h1:DNLKtOe7jGRAPzxXev6ikyxlYM3e3Gw7kr0OV4lpzEc=
+typefox.dev/lsp v0.1.1-0.20261118153954-96784c0385ae/go.mod h1:MQ6ZIFd9xDC+jrSzj5XYTfAvFrAM5l/3BossgTTpwPg=
+typefox.dev/lsp v0.2.0 h1:bhRbx2TjecRJUqQWXx3GVoXXf6+AnvPUGgm71KpBcK0=
+typefox.dev/lsp v0.2.0/go.mod h1:MQ6ZIFd9xDC+jrSzj5XYTfAvFrAM5l/3BossgTTpwPg=
