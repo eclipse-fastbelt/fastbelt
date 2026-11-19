@@ -31,6 +31,10 @@
         "language": "arithmetics",
         "scopeName": "source.arithmetics",
         "path": "./syntaxes/arithmetics.tmLanguage.json"
+      },
+      {
+        "scopeName": "source.arithmetics-common",
+        "path": "./syntaxes/arithmetics-common.tmLanguage.json"
       }
     ]
   },

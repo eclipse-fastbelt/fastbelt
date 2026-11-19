@@ -7,11 +7,20 @@ import (
 	"typefox.dev/fastbelt/lexer"
 	"typefox.dev/fastbelt/parser"
 	"typefox.dev/fastbelt/util/service"
+	"typefox.dev/fastbelt/workspace"
 )
 
 // SetupGeneratedServices sets up the generated services for this grammar.
 // If any service is already set, it's not overwritten.
 func SetupGeneratedServices(sc *service.Container) {
+	if !sc.Has[core.LanguageSelector]() {
+		sc.Put[core.LanguageSelector](
+			workspace.NewDefaultLanguageSelector(
+				sc,
+				workspace.NewDocumentMatcherWithPatterns("statemachine", "**/*.statemachine"),
+			),
+		)
+	}
 	if !sc.Has[StatemachineModelScopeProvider]() {
 		sc.Put(NewDefaultStatemachineModelScopeProvider(sc))
 	}

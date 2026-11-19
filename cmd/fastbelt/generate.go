@@ -61,7 +61,8 @@ func runGenerateCLI(opts generateOptions) error {
 	}
 	// The CLI only supports a single language. Use the cmd.BuildContext API
 	// to generate code for multiple languages.
-	return cmd.Generate(g, []grammar.ParserRule{entryRule}, nil, nil, outputPath, packageName, opts.atn, opts.railroad, verbose)
+	return cmd.Generate(g, []grammar.ParserRule{entryRule}, nil, nil, outputPath, packageName,
+		cmd.GenerateOptions{ATN: opts.atn, Railroad: opts.railroad, Verbose: verbose})
 }
 
 func validateEntryRule(g grammar.Grammar) (grammar.ParserRule, error) {

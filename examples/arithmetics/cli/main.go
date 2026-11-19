@@ -129,15 +129,11 @@ func runExportCLI(opts exportOptions) error {
 	file := textdoc.NewFile(lsp.URIFromPath(inputPath), "arithmetics", 0, string(inputText))
 
 	document := core.NewDocument(file)
-	documents, err := sc.Get[workspace.DocumentManager]()
-	if err != nil {
-		return err
-	}
+	// MustGet instead of Get: staticcheck v0.8.1 (golangci-lint v2.14.0) panics
+	// in SA4023 on "x, err := sc.Get[T](); if err != nil" here.
+	documents := sc.MustGet[workspace.DocumentManager]()
 	documents.Set(document)
-	builder, err := sc.Get[workspace.Builder]()
-	if err != nil {
-		return err
-	}
+	builder := sc.MustGet[workspace.Builder]()
 	if err := builder.Build(context.Background(), []*core.Document{document}); err != nil {
 		return err
 	}

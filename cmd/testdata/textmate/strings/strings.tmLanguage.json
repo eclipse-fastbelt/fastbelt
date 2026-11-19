@@ -1,0 +1,13 @@
+{
+  "name": "strings",
+  "scopeName": "source.strings",
+  "fileTypes": [
+    "str",
+    "strings"
+  ],
+  "patterns": [
+    {
+      "include": "source.strings-common#Model"
+    }
+  ]
+}

@@ -5,10 +5,11 @@ This repository was generated with [fastbelt](https://github.com/TypeFox/fastbel
 It includes:
 
 - **`{{.GrammarFile}}`**: Minimal fastbelt grammar (`{{.GrammarName}}`).
-- **`services.go`**: LSP service wiring (document selector, workspace, linking, generated lexer/parser) and the `//go:generate` directive that runs `go tool typefox.dev/fastbelt/cmd/fastbelt generate` to emit `*_gen.go`.
+- **`services.go`**: LSP service wiring (workspace, linking, generated lexer/parser and document selector).
+- **`gen.go`** and **`gen/main.go`**: the `//go:generate go run ./gen` directive and the generator configuration (`cmd.BuildContext`): entry rule, language ID, file patterns{{if .CreateVSCodeExtension}}, and the output directory of the TextMate grammars{{end}}. It emits `*_gen.go`{{if .CreateVSCodeExtension}} and `vscode-extension/syntaxes/*.tmLanguage.json`{{end}}.
 - **`cmd/{{.LSPSlug}}`**: Language server entrypoint (stdio JSON-RPC).
 {{ if .CreateVSCodeExtension -}}
-- **`vscode-extension/`**: VS Code language client + TextMate grammar skeleton.
+- **`vscode-extension/`**: VS Code language client + generated TextMate grammars (`syntaxes/`).
 - **Root `package.json`**: npm workspace so you can build and package the extension from the repo root.
 {{- end}}
 
@@ -17,9 +18,9 @@ It includes:
 - Go (see `go.mod`)
 - Node.js 20+ and npm 10+ for the extension
 
-## Regenerate Go sources
+## Regenerate sources
 
-From the module root:
+After changing the grammar or `gen/main.go`, run from the module root:
 
 ```sh
 go generate ./...

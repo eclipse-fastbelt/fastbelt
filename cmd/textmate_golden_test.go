@@ -1,0 +1,133 @@
+// Copyright 2026 TypeFox GmbH
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+
+package cmd
+
+import (
+	"flag"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+var update = flag.Bool("update", false, "rewrite the golden files in testdata")
+
+// TestTextMateGolden builds the TextMate grammars of several languages and
+// compares them with the files in testdata/textmate/<case>, or for the
+// example languages with the files of their VS Code extension. Run
+// "go test ./cmd -run TestTextMateGolden -update" to rewrite them.
+func TestTextMateGolden(t *testing.T) {
+	cases := []struct {
+		name      string
+		input     string
+		languages []Language
+		scopes    map[string]string
+		// golden is the directory of the expected files, testdata/textmate/<name> if empty.
+		golden string
+	}{
+		{
+			// Several files, two languages with declared per-language modes.
+			name:  "multilang",
+			input: "../internal/languages/multilang",
+			languages: []Language{
+				{Entry: "Greeting", TokenMode: "GreetingMode", LanguageID: "greeting", Patterns: []string{"*.hello"}},
+				{Entry: "Farewell", TokenMode: "FarewellMode", LanguageID: "farewell", Patterns: []string{"*.bye"}},
+			},
+		},
+		{
+			// push, pop and nested modes.
+			name:      "token_modes",
+			input:     "../internal/languages/token_modes",
+			languages: []Language{{Entry: "Model", LanguageID: "tokenmodes", Patterns: []string{"*.tokenmodes"}}},
+		},
+		{
+			// Same configuration as examples/arithmetics/gen/main.go, so this
+			// also fails when the extension's grammars are out of date.
+			name:      "arithmetics",
+			input:     "../examples/arithmetics",
+			languages: []Language{{Entry: "Module", LanguageID: "arithmetics", Patterns: []string{"**/*.calc"}}},
+			scopes:    map[string]string{"SL_COMMENT": "comment.line"},
+			golden:    "../internal/vscode-extensions/arithmetics/syntaxes",
+		},
+		{
+			// Same configuration as examples/statemachine/gen/main.go.
+			name:      "statemachine",
+			input:     "../examples/statemachine",
+			languages: []Language{{Entry: "Statemachine", LanguageID: "statemachine", Patterns: []string{"**/*.statemachine"}}},
+			golden:    "../internal/vscode-extensions/statemachine/syntaxes",
+		},
+		{
+			// Strings with and without escapes, multi-line tokens and overrides.
+			name:      "strings",
+			input:     "testdata/textmate/input/strings",
+			languages: []Language{{Entry: "Model", LanguageID: "strings", Patterns: []string{"*.str", "*.strings"}}},
+			scopes:    map[string]string{"CHAR": "string.quoted.single", "ID": "variable.other"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out := t.TempDir()
+			ctx := &BuildContext{
+				Input:          c.input,
+				Output:         t.TempDir(),
+				Package:        "golden",
+				Languages:      c.languages,
+				TextMateOutput: out,
+				TextMateScopes: c.scopes,
+			}
+			require.NoError(t, ctx.Build())
+
+			golden := c.golden
+			if golden == "" {
+				golden = filepath.Join("testdata", "textmate", c.name)
+			}
+			generated := tmLanguageFiles(t, out)
+			if *update {
+				require.NoError(t, os.MkdirAll(golden, 0755))
+				// Only remove the TextMate grammars; the extension directories hold other files.
+				for _, name := range tmLanguageFiles(t, golden) {
+					require.NoError(t, os.Remove(filepath.Join(golden, name)))
+				}
+				for _, name := range generated {
+					content, err := os.ReadFile(filepath.Join(out, name))
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(golden, name), content, 0644))
+				}
+				return
+			}
+			require.Equal(t, tmLanguageFiles(t, golden), generated, "generated files differ; run with -update")
+			for _, name := range generated {
+				want, err := os.ReadFile(filepath.Join(golden, name))
+				require.NoError(t, err)
+				got, err := os.ReadFile(filepath.Join(out, name))
+				require.NoError(t, err)
+				// git may check out the golden files with CRLF (core.autocrlf on Windows),
+				// while the generator always writes LF.
+				require.Equal(t, normalizeNewlines(want), normalizeNewlines(got), "%s differs; run with -update", name)
+			}
+		})
+	}
+}
+
+// normalizeNewlines returns content as a string with CRLF line endings replaced by LF.
+func normalizeNewlines(content []byte) string {
+	return strings.ReplaceAll(string(content), "\r\n", "\n")
+}
+
+// tmLanguageFiles returns the sorted names of the *.tmLanguage.json files in dir.
+func tmLanguageFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(dir, "*.tmLanguage.json"))
+	require.NoError(t, err)
+	names := make([]string, 0, len(matches))
+	for _, match := range matches {
+		names = append(names, filepath.Base(match))
+	}
+	slices.Sort(names)
+	return names
+}

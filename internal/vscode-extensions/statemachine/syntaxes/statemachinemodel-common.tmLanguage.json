@@ -1,0 +1,55 @@
+{
+  "scopeName": "source.statemachinemodel-common",
+  "patterns": [],
+  "repository": {
+    "Statemachine": {
+      "patterns": [
+        {
+          "include": "#mode_default"
+        }
+      ]
+    },
+    "keywords_default": {
+      "match": "(\\b(?:initialState|statemachine|commands|actions|events|state|end)\\b)|(=>)|(\\{|\\})",
+      "captures": {
+        "1": {
+          "name": "keyword.control.statemachinemodel"
+        },
+        "2": {
+          "name": "keyword.operator.statemachinemodel"
+        },
+        "3": {
+          "name": "punctuation.section.statemachinemodel"
+        }
+      }
+    },
+    "mode_default": {
+      "patterns": [
+        {
+          "include": "#token_ML_COMMENT_comment"
+        },
+        {
+          "include": "#token_SL_COMMENT_comment"
+        },
+        {
+          "include": "#keywords_default"
+        },
+        {
+          "include": "#token_ID"
+        }
+      ]
+    },
+    "token_ID": {
+      "match": "[A-Z_a-z][0-9A-Z_a-z]*"
+    },
+    "token_ML_COMMENT_comment": {
+      "name": "comment.block.statemachinemodel",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    "token_SL_COMMENT_comment": {
+      "name": "comment.line.statemachinemodel",
+      "match": "//[^\\n\\r]*"
+    }
+  }
+}

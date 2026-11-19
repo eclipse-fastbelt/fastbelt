@@ -4,4 +4,4 @@
 
 package arithmetics
 
-//go:generate go run ../../cmd/fastbelt generate ./arithmetics.fb -o . -p arithmetics -v
+//go:generate go run ./gen

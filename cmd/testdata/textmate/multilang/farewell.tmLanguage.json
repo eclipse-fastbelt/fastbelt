@@ -1,0 +1,12 @@
+{
+  "name": "farewell",
+  "scopeName": "source.farewell",
+  "fileTypes": [
+    "bye"
+  ],
+  "patterns": [
+    {
+      "include": "source.multilangmodel-common#Farewell"
+    }
+  ]
+}

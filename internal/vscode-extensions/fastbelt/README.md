@@ -66,10 +66,10 @@ renamed or deleted rules are not removed from `railroad/`.
 
 ## Scaffolding
 
-To bootstrap a **new Go module** for a language (minimal `.fb` grammar, `go:generate` using `go tool` on this CLI, LSP command, and VS Code extension layout), run:
+To bootstrap a **new Go module** for a language (minimal `.fb` grammar, a `gen/main.go` generator run by `go:generate`, LSP command, and VS Code extension layout with generated TextMate grammars), run:
 
 ```sh
 fastbelt scaffold --module example.com/you/mylang --language "MyLanguage" --vscode
 ```
 
-That creates a directory named after the last segment of `--module` (here `./mylang`) in the current working directory, runs `go mod init`, pulls in fastbelt as a library and tool dependency, lays down the files, and runs `go generate`. Use `fastbelt scaffold -h` for full usage.
+That creates a directory named after the last segment of `--module` (here `./mylang`) in the current working directory, runs `go mod init`, pulls in fastbelt as a library dependency, lays down the files, and runs `go generate`. Use `fastbelt scaffold -h` for full usage.
