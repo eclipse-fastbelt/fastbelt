@@ -211,14 +211,29 @@ and compares the produced file set and contents with `cmd/testdata/textmate/<cas
   - One-off `vscode-textmate` run (not committed) over `example.calc` and `example.statemachine`, with the grammars
     loaded through `package.json`: keywords, punctuation, operators, numbers and `//` comments as expected.
 
-## 9. Scaffold (`internal/scaffold`)
+## 9. Scaffold (`internal/scaffold`) ✅ done (2026-11-19)
 
-- [ ] Add a `gen/main.go.tmpl` using `cmd.BuildContext` (LanguageID and patterns from the template params, plus `TextMateOutput`).
-  Point the `go:generate` line in `services.go.tmpl` at it.
-- [ ] Remove the hand-written `sc.Put[core.LanguageSelector]` from `services.go.tmpl`. The generated one replaces it (Q18).
-- [ ] `package.json.tmpl`: add the grammars entry for the common file.
-- [ ] Drop `syntaxes/language.tmLanguage.json.tmpl`, or replace it with a placeholder that the first generate run overwrites.
-- [ ] Update `scaffold_test.go`.
+- [x] New templates `gen.go.tmpl` (only `//go:generate go run ./gen`, like the examples) and `gen/main.go.tmpl`, a
+  `cmd.BuildContext` with `Input: "."`, `Package: <GoPackage>` (it can differ from the directory name), entry rule,
+  language ID and `**/*.<ext>`. `TextMateOutput: "vscode-extension/syntaxes"` is only set with `--vscode`.
+- [x] `services.go.tmpl`: removed the `go:generate` line, the hand-written `LanguageSelector` and the root
+  `typefox.dev/fastbelt` import. `SetupGeneratedServices` registers the selector.
+- [x] The `go get -tool …/cmd/fastbelt` step was dropped. The scaffold now runs `go get typefox.dev/fastbelt/cmd[@v]`.
+  Getting that package, not only the module, records the go.sum entries that `go run ./gen` needs before `go mod tidy`.
+- [x] `package.json.tmpl`: second `grammars` entry for the common file (no `language`).
+  - `SyntaxFile`/`ScopeName` now use the language ID (`my-lang.tmLanguage.json`, `source.my-lang`), as the generator
+    does. Before, they used the extension without dashes. New `CommonSyntaxFile`/`CommonScopeName`
+    (`mylangmodel-common`).
+- [x] Dropped `syntaxes/language.tmLanguage.json.tmpl`. `Run` always runs `go generate`, which writes both grammars.
+- [x] `README.md.tmpl`, the root `README.md` and the fastbelt extension's README no longer mention the tool dependency.
+  They describe `gen/main.go` and the generated grammars.
+- [x] Tests:
+  - `scaffold_test.go`: names, `gen/main.go` with and without `--vscode`, `gen.go`, `services.go`, and the
+    `package.json` grammars
+  - e2e: the generated grammars exist and their `scopeName`s match `package.json`
+  - Manual: scaffold without `--vscode` and into an existing module (`-p langs/calc`). Both build.
+- Found, not fixed (already there before): `scaffold -m example.com/acme/host -p pkg/lang` runs `go mod init` with
+  the package import path (`…/host/pkg/lang`), so `cmd/<lsp>/main.go` does not build.
 
 ## 10. Docs
 

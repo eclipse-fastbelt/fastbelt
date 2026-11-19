@@ -36,22 +36,29 @@ type templateParams struct {
 	FileDotExt string
 	// VSCodeFileExt is the file extension without a leading dot for contributes.languages.
 	VSCodeFileExt string
-	// ScopeName is the TextMate scope name for syntax highlighting.
+	// ScopeName is the TextMate scope name of the generated language grammar (source.<LanguageID>).
 	ScopeName string
 	// LSPSlug is the subdirectory name cmd/<LSPSlug> for the LSP main package.
 	LSPSlug string
-	// SyntaxFile is the *.tmLanguage.json basename under vscode-extension/syntaxes.
+	// SyntaxFile is the basename of the generated language grammar under vscode-extension/syntaxes.
+	// It must match generator.TextMateLanguageFileName.
 	SyntaxFile string
+	// CommonScopeName is the TextMate scope name of the generated common grammar
+	// (source.<lower(GrammarName)>-common).
+	CommonScopeName string
+	// CommonSyntaxFile is the basename of the generated common grammar under vscode-extension/syntaxes.
+	// It must match generator.TextMateCommonFileName.
+	CommonSyntaxFile string
 	// NPMExtension is the vscode-extension npm package name (alnum + "-vscode").
 	NPMExtension string
 	// VSIXFilename is the output .vsix file name produced by vsce package.
 	VSIXFilename string
 	// RootNPMName is the npm package name for the root workspace package.json.
 	RootNPMName string
-	// FastbeltGoGet is the library module path with version for go get (M@V).
+	// FastbeltGoGet is the typefox.dev/fastbelt/cmd package path with version for go get (P@V).
+	// Getting the package rather than the module also records the go.sum entries of its imports,
+	// which go run ./gen needs before go mod tidy runs.
 	FastbeltGoGet string
-	// FastbeltToolGoGet is the fastbelt CLI package path with version for go get -tool (M@V).
-	FastbeltToolGoGet string
 }
 
 func newTemplateParams(s *Scaffolder) (templateParams, error) {
@@ -86,17 +93,17 @@ func newTemplateParams(s *Scaffolder) (templateParams, error) {
 	}
 	dotExt := "." + alnumExt
 	lspSlug := languageID + "-lsp"
-	syntaxFile := alnumExt + ".tmLanguage.json"
+	// The TextMate generator names the files after the language ID and the lower-cased grammar name.
+	syntaxFile := languageID + ".tmLanguage.json"
+	commonGrammar := strings.ToLower(grammarName) + "-common"
 	npmExt := alnumExt + "-vscode"
 	vsix := npmExt + ".vsix"
 
-	fastbeltGoGet := fastbeltModulePath
-	fastbeltToolGoGet := fastbeltModulePath + "/cmd/fastbelt"
+	fastbeltGoGet := fastbeltModulePath + "/cmd"
 	if localPath := fastbeltModuleLocalPath(); localPath == "" {
 		// If no local path override is set, use the resolved module version for go get.
 		ver := fastbeltModuleVersion()
 		fastbeltGoGet += "@" + ver
-		fastbeltToolGoGet += "@" + ver
 	}
 
 	return templateParams{
@@ -111,14 +118,15 @@ func newTemplateParams(s *Scaffolder) (templateParams, error) {
 		GrammarFile:           grammarFile,
 		FileDotExt:            dotExt,
 		VSCodeFileExt:         alnumExt,
-		ScopeName:             "source." + alnumExt,
+		ScopeName:             "source." + languageID,
 		LSPSlug:               lspSlug,
 		SyntaxFile:            syntaxFile,
+		CommonScopeName:       "source." + commonGrammar,
+		CommonSyntaxFile:      commonGrammar + ".tmLanguage.json",
 		NPMExtension:          npmExt,
 		VSIXFilename:          vsix,
 		RootNPMName:           alnumExt + "-workspace",
 		FastbeltGoGet:         fastbeltGoGet,
-		FastbeltToolGoGet:     fastbeltToolGoGet,
 	}, nil
 }
 

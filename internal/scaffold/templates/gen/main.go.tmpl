@@ -1,0 +1,31 @@
+// Command gen generates the {{.LanguageLabel}} language{{if .CreateVSCodeExtension}} and the TextMate grammars of
+// its VS Code extension{{end}}. It is run by go generate in the language package directory, so all
+// paths are relative to that directory.
+package main
+
+import (
+	"log"
+
+	"typefox.dev/fastbelt/cmd"
+)
+
+func main() {
+	ctx := &cmd.BuildContext{
+		Input:   ".",
+		Package: "{{.GoPackage}}",
+		Languages: []cmd.Language{
+			{
+				Entry:      "Document",
+				LanguageID: "{{.LanguageID}}",
+				Patterns:   []string{"**/*{{.FileDotExt}}"},
+			},
+		},
+{{- if .CreateVSCodeExtension}}
+		TextMateOutput: "vscode-extension/syntaxes",
+{{- end}}
+		Verbose: true,
+	}
+	if err := ctx.Build(); err != nil {
+		log.Fatalf("{{.LanguageLabel}} generation failed: %v", err)
+	}
+}

@@ -68,6 +68,32 @@ func TestScaffoldModule_endToEnd(t *testing.T) {
 		require.DirExists(t, moduleRoot)
 	})
 
+	// go generate in the scaffold writes the TextMate grammars; package.json must point at them.
+	t.Run("textmate grammars", func(t *testing.T) {
+		extDir := filepath.Join(moduleRoot, "vscode-extension")
+		pkgJSON, err := os.ReadFile(filepath.Join(extDir, "package.json"))
+		require.NoError(t, err)
+		var pkg struct {
+			Contributes struct {
+				Grammars []struct {
+					ScopeName string `json:"scopeName"`
+					Path      string `json:"path"`
+				} `json:"grammars"`
+			} `json:"contributes"`
+		}
+		require.NoError(t, json.Unmarshal(pkgJSON, &pkg))
+		require.Len(t, pkg.Contributes.Grammars, 2)
+		for _, g := range pkg.Contributes.Grammars {
+			grammarJSON, err := os.ReadFile(filepath.Join(extDir, filepath.FromSlash(g.Path)))
+			require.NoError(t, err, "grammar %s", g.Path)
+			var grammar struct {
+				ScopeName string `json:"scopeName"`
+			}
+			require.NoError(t, json.Unmarshal(grammarJSON, &grammar), "grammar %s", g.Path)
+			require.Equal(t, g.ScopeName, grammar.ScopeName, "grammar %s", g.Path)
+		}
+	})
+
 	for _, step := range []struct {
 		name string
 		args []string
