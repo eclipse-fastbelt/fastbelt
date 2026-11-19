@@ -3,8 +3,10 @@
 .gitignore
 node_modules/**
 src/**
+dist/*.map
 *.vsix
 esbuild.js
+build-wasm.js
 publish.sh
 tsconfig.json
 .DS_Store
