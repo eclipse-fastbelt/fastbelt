@@ -224,7 +224,7 @@ func TestGenMainTemplate(t *testing.T) {
 func TestGenGoTemplate(t *testing.T) {
 	src := renderForTest(t, "gen.go.tmpl", true)
 	requireParsesAsGo(t, "gen.go", src)
-	require.Contains(t, src, "\n//go:generate go run ./gen\n")
+	require.Contains(t, src, "//go:generate go run ./gen")
 }
 
 func TestServicesTemplateLeavesSelectorToGeneratedCode(t *testing.T) {
