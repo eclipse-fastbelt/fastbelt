@@ -714,6 +714,11 @@ func NewDefaultBinder(sc *service.Container) *DefaultBinder {
 	return &DefaultBinder{sc: sc}
 }
 
+// NewDefaultBinder creates a new [DefaultBinder], that supports cancellation and concurrent requests.
+func NewDefaultAsyncCancelBinder(sc *service.Container) jsonrpc2.Binder {
+	return lsp.CancelBinder(lsp.AsyncBinder(NewDefaultBinder(sc)))
+}
+
 func (b *DefaultBinder) Bind(ctx context.Context, conn *jsonrpc2.Connection) (jsonrpc2.ConnectionOptions, error) {
 	// Store the JSON-RPC connection in the service container
 	connection, err := b.sc.Get[*Connection]()
