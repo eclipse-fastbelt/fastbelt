@@ -6,6 +6,9 @@ package scaffold
 
 import (
 	"bytes"
+	"encoding/json"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -31,8 +34,12 @@ func TestPrepareNames(t *testing.T) {
 	require.Equal(t, "my-lang.fb", n.GrammarFile)
 	require.Equal(t, ".mylang", n.FileDotExt)
 	require.Equal(t, "my-lang-lsp", n.LSPSlug)
-	require.Contains(t, n.FastbeltGoGet, "typefox.dev/fastbelt@")
-	require.Contains(t, n.FastbeltToolGoGet, "typefox.dev/fastbelt/cmd/fastbelt@")
+	// The TextMate file and scope names must match those of the generator.
+	require.Equal(t, "my-lang.tmLanguage.json", n.SyntaxFile)
+	require.Equal(t, "source.my-lang", n.ScopeName)
+	require.Equal(t, "mylangmodel-common.tmLanguage.json", n.CommonSyntaxFile)
+	require.Equal(t, "source.mylangmodel-common", n.CommonScopeName)
+	require.Contains(t, n.FastbeltGoGet, "typefox.dev/fastbelt/cmd@")
 }
 
 func TestPrepareNames_goKeywordPackage(t *testing.T) {
@@ -180,4 +187,64 @@ func TestResolveWriteRootUnderModule_subdirOfNewModule(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(modDir, "pkg", "lang"), scaffolder.WriteRoot)
 	require.Equal(t, "example.com/acme/foo/pkg/lang", scaffolder.ImportPath)
+}
+
+func renderForTest(t *testing.T, templatePath string, vscode bool) string {
+	t.Helper()
+	s := &Scaffolder{ImportPath: "example.com/acme/foo", Language: "My Lang", CreateVSCodeExtension: vscode}
+	n, err := newTemplateParams(s)
+	require.NoError(t, err)
+	out, err := s.renderTemplate(templatePath, n)
+	require.NoError(t, err)
+	return string(out)
+}
+
+func requireParsesAsGo(t *testing.T, name, src string) {
+	t.Helper()
+	_, err := parser.ParseFile(token.NewFileSet(), name, src, parser.ParseComments)
+	require.NoError(t, err, src)
+}
+
+func TestGenMainTemplate(t *testing.T) {
+	for _, vscode := range []bool{true, false} {
+		src := renderForTest(t, "gen/main.go.tmpl", vscode)
+		requireParsesAsGo(t, "main.go", src)
+		require.Contains(t, src, `Package: "mylang"`)
+		require.Contains(t, src, `Entry:      "Document"`)
+		require.Contains(t, src, `LanguageID: "my-lang"`)
+		require.Contains(t, src, `Patterns:   []string{"**/*.mylang"}`)
+		if vscode {
+			require.Contains(t, src, `TextMateOutput: "vscode-extension/syntaxes"`)
+		} else {
+			require.NotContains(t, src, "TextMateOutput")
+		}
+	}
+}
+
+func TestGenGoTemplate(t *testing.T) {
+	src := renderForTest(t, "gen.go.tmpl", true)
+	requireParsesAsGo(t, "gen.go", src)
+	require.Contains(t, src, "\n//go:generate go run ./gen\n")
+}
+
+func TestServicesTemplateLeavesSelectorToGeneratedCode(t *testing.T) {
+	src := renderForTest(t, "services.go.tmpl", true)
+	requireParsesAsGo(t, "services.go", src)
+	require.NotContains(t, src, "go:generate")
+	require.NotContains(t, src, "sc.Put[")
+	require.Contains(t, src, "SetupGeneratedServices(sc)")
+}
+
+func TestPackageJSONTemplateGrammars(t *testing.T) {
+	src := renderForTest(t, "vscode-extension/package.json.tmpl", true)
+	var pkg struct {
+		Contributes struct {
+			Grammars []map[string]string `json:"grammars"`
+		} `json:"contributes"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(src), &pkg), src)
+	require.Equal(t, []map[string]string{
+		{"language": "my-lang", "scopeName": "source.my-lang", "path": "./syntaxes/my-lang.tmLanguage.json"},
+		{"scopeName": "source.mylangmodel-common", "path": "./syntaxes/mylangmodel-common.tmLanguage.json"},
+	}, pkg.Contributes.Grammars)
 }

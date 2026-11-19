@@ -1,0 +1,5 @@
+package {{.GoPackage}}
+
+// Runs gen/main.go, which generates the lexer, parser and services{{if .CreateVSCodeExtension}}, and the
+// TextMate grammars of the VS Code extension{{end}}.
+//go:generate go run ./gen

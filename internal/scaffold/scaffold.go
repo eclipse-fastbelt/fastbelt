@@ -19,7 +19,7 @@ import (
 //go:embed all:templates
 var templateFS embed.FS
 
-// Scaffolder runs the language scaffold workflow (templates, optional go mod init, go get attempts,
+// Scaffolder runs the language scaffold workflow (templates, optional go mod init, go get attempt,
 // go generate, go mod tidy).
 type Scaffolder struct {
 	// CreateModule, when true, ensures ModuleRoot is empty or new, runs go mod init there. WriteRoot
@@ -39,7 +39,7 @@ type Scaffolder struct {
 }
 
 // Run executes the scaffold: prepare names, optionally go mod init, write files, try fastbelt go get,
-// go generate, and go mod tidy.
+// go generate (which runs the generated gen/main.go), and go mod tidy.
 func (s *Scaffolder) Run() error {
 	if s.ModuleRoot == "" {
 		return fmt.Errorf("scaffold: ModuleRoot is empty")
@@ -94,7 +94,7 @@ func (s *Scaffolder) Run() error {
 			fmt.Fprintf(os.Stderr, "fastbelt scaffold: warning: go mod edit -replace: %v\n", err)
 		}
 	}
-	tryGoGetFastbeltDependencies(s.ModuleRoot, names.FastbeltGoGet, names.FastbeltToolGoGet)
+	tryGoGetFastbelt(s.ModuleRoot, names.FastbeltGoGet)
 
 	genArg := "./..."
 	if s.WriteRoot != s.ModuleRoot {
@@ -304,16 +304,13 @@ func (s *Scaffolder) scaffoldOutputDir() string {
 	return s.ModuleRoot
 }
 
-// tryGoGetFastbeltDependencies runs go get for the fastbelt library and tool at librarySpec and toolSpec
-// (for example from ModuleNames.FastbeltGoGet / FastbeltToolGoGet). Errors are printed to stderr and
-// ignored so scaffolding can proceed when the module already provides those packages (for example
-// developing fastbelt itself).
-func tryGoGetFastbeltDependencies(moduleRoot, librarySpec, toolSpec string) {
+// tryGoGetFastbelt runs go get for librarySpec, the typefox.dev/fastbelt/cmd package that the
+// generated gen/main.go imports (templateParams.FastbeltGoGet).
+// Errors are printed to stderr and ignored so scaffolding can proceed when the module already
+// provides the library (for example developing fastbelt itself).
+func tryGoGetFastbelt(moduleRoot, librarySpec string) {
 	if err := runGo(moduleRoot, "get", librarySpec); err != nil {
 		fmt.Fprintf(os.Stderr, "fastbelt scaffold: warning: go get %s: %v\n", librarySpec, err)
-	}
-	if err := runGo(moduleRoot, "get", "-tool", toolSpec); err != nil {
-		fmt.Fprintf(os.Stderr, "fastbelt scaffold: warning: go get -tool %s: %v\n", toolSpec, err)
 	}
 }
 
@@ -326,6 +323,8 @@ func (s *Scaffolder) scaffoldTemplatedFiles(params templateParams) error {
 		{"README.md.tmpl", "README.md"},
 		{"gitignore.tmpl", ".gitignore"},
 		{"services.go.tmpl", "services.go"},
+		{"gen.go.tmpl", "gen.go"},
+		{"gen/main.go.tmpl", filepath.Join("gen", "main.go")},
 		{"grammar.fb.tmpl", params.GrammarFile},
 		{"cmd/main.go.tmpl", filepath.Join("cmd", params.LSPSlug, "main.go")},
 	}
@@ -335,7 +334,6 @@ func (s *Scaffolder) scaffoldTemplatedFiles(params templateParams) error {
 			{"vscode-extension/package.json.tmpl", filepath.Join("vscode-extension", "package.json")},
 			{"vscode-extension/tsconfig.json.tmpl", filepath.Join("vscode-extension", "tsconfig.json")},
 			{"vscode-extension/src/extension.ts.tmpl", filepath.Join("vscode-extension", "src", "extension.ts")},
-			{"vscode-extension/syntaxes/language.tmLanguage.json.tmpl", filepath.Join("vscode-extension", "syntaxes", params.SyntaxFile)},
 			{"vscode-extension/vscodeignore.tmpl", filepath.Join("vscode-extension", ".vscodeignore")},
 		}...)
 	}
