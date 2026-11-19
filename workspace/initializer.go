@@ -20,8 +20,8 @@ import (
 // Initializer loads workspace files into [DocumentManager] when an LSP
 // workspace folder is opened.
 type Initializer interface {
-	// Initialize walks folders on disk, reads files whose extension matches
-	// [FileExtensions], and registers them with [DocumentManager]. Should be called
+	// Initialize walks folders on disk, reads the files that [IncludeFilter]
+	// accepts, and registers them with [DocumentManager]. Should be called
 	// under [Lock.Write] to prevent concurrent write access to the documents.
 	Initialize(ctx context.Context, folders []lsp.WorkspaceFolder) error
 	// Ready returns a channel that is closed once all workspace files have been

@@ -22,7 +22,7 @@
 // [typefox.dev/fastbelt/util/service.Container]. [SetupDefaultServices]
 // registers the framework defaults:
 //
-//   - [Initializer] — loads files matching [FileExtensions] from workspace folders on startup
+//   - [Initializer] — loads the files of the languages from workspace folders on startup
 //   - [Lock] — read/write coordination with per-document state admission for readers
 //   - [Builder] — runs the build pipeline that takes documents to a linked, validated state
 //   - [DocumentManager] — concurrent in-memory store of all documents, keyed by URI
@@ -75,8 +75,9 @@
 // # How the services work together
 //
 // On startup the server calls [Initializer.Initialize], which walks the open
-// workspace folders, reads files whose extension matches [FileExtensions], and
-// registers them with [DocumentManager].
+// workspace folders, reads the files that [IncludeFilter] accepts, and
+// registers them with [DocumentManager]. By default these are the files that
+// the [typefox.dev/fastbelt.LanguageSelector] maps to a language.
 //
 // When a file changes, the LSP document sync layer acquires [Lock.Write],
 // applies the text change, and calls [DocumentUpdater.Update] with the changed

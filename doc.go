@@ -93,6 +93,60 @@
 // this pattern and can be used as a starting point for service-container
 // customization.
 //
+// # Syntax Highlighting
+//
+// The build can generate TextMate grammars for syntax highlighting in editors
+// like VS Code. The fastbelt CLI has no option for this; use a small generator
+// program with [typefox.dev/fastbelt/cmd.BuildContext] instead, run through
+// `go generate`. Scaffolded projects contain one in `gen/main.go`:
+//
+//	ctx := &cmd.BuildContext{
+//	    Languages: []cmd.Language{{
+//	        Entry:      "Model",
+//	        LanguageID: "mylang",
+//	        Patterns:   []string{"**/*.mylang"},
+//	    }},
+//	    TextMateOutput: "vscode-extension/syntaxes",
+//	    TextMateScopes: map[string]string{"SL_COMMENT": "comment.line"},
+//	}
+//	err := ctx.Build()
+//
+// TextMateOutput is the directory for the TextMate grammars. If it is empty,
+// none are generated. TextMateScopes overrides the scopes that are derived
+// from token names and modifiers. The scope rules, the overrides, and how
+// token modes are mapped are described in [typefox.dev/fastbelt/grammar].
+//
+// The build writes two kinds of files:
+//
+//   - `<grammar>-common.tmLanguage.json` with scope name
+//     `source.<grammar>-common`, where `<grammar>` is the lower-cased grammar
+//     name. It contains the rules of all languages of the grammar.
+//   - `<languageID>.tmLanguage.json` with scope name `source.<languageID>` for
+//     each language. It only includes the rules of its language's entry rule
+//     from the common file. Its fileTypes are taken from patterns like
+//     `**/*.mylang`.
+//
+// The files are generated, but the extension's `package.json` is not. It
+// needs one `grammars` entry per language and one for the common file,
+// without a language, so that the language files can include it:
+//
+//	"contributes": {
+//	  "grammars": [
+//	    {
+//	      "language": "mylang",
+//	      "scopeName": "source.mylang",
+//	      "path": "./syntaxes/mylang.tmLanguage.json"
+//	    },
+//	    {
+//	      "scopeName": "source.mylangmodel-common",
+//	      "path": "./syntaxes/mylangmodel-common.tmLanguage.json"
+//	    }
+//	  ]
+//	}
+//
+// Here the grammar is named `MyLangModel`. The language ID must match the
+// `languages` entry of `package.json`.
+//
 // # To Go Further
 //
 // For implementing the exact behavior of your language, these subpackages are

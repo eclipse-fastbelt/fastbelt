@@ -235,8 +235,12 @@ and compares the produced file set and contents with `cmd/testdata/textmate/<cas
 - Found, not fixed (already there before): `scaffold -m example.com/acme/host -p pkg/lang` runs `go mod init` with
   the package import path (`…/host/pkg/lang`), so `cmd/<lsp>/main.go` does not build.
 
-## 10. Docs
+## 10. Docs ✅ done (2026-11-19)
 
-- [ ] Document TextMate generation: the `BuildContext` fields, scope heuristics and overrides, mode mapping and its limits,
-  and the `package.json` snippet. Put it in `doc.go` and/or `grammar/doc.go`.
-- [ ] Side note: `workspace/doc.go` still refers to `[FileExtensions]`, which no longer exists. Fix it while you are there.
+- [x] `doc.go`, new section "Syntax Highlighting": a `gen/main.go` with `BuildContext` (`TextMateOutput`,
+  `TextMateScopes`), the two generated files and their scope names, and the `package.json` `grammars` snippet.
+- [x] `grammar/doc.go`, new section "Syntax Highlighting": the scope heuristics in order, overrides (also for hidden
+  tokens, keyword names), how rules are ordered and split into begin/end, the token-mode mapping
+  (push / pop / mode) and its limits (entry-mode pop tokens, `mode` warning, one scope per token).
+- [x] `workspace/doc.go` and `Initializer.Initialize`: replaced `[FileExtensions]` with `[IncludeFilter]` /
+  `LanguageSelector`.
