@@ -6,6 +6,7 @@ package server
 
 import (
 	"log/slog"
+	"sync"
 	"sync/atomic"
 
 	"golang.org/x/exp/jsonrpc2"
@@ -24,6 +25,61 @@ type Connection struct {
 	Value *jsonrpc2.Connection
 	// initialized is set by SetInitialized.
 	initialized atomic.Bool
+	// shutdown is set by SetShutdown.
+	shutdown atomic.Bool
+	// exited is closed by Exit. It is created on first use, so that the zero
+	// Connection is ready to use.
+	exited     chan struct{}
+	exitedInit sync.Once
+	exitOnce   sync.Once
+}
+
+// ShutdownReceived reports whether the client has sent the shutdown request.
+func (c *Connection) ShutdownReceived() bool {
+	return c.shutdown.Load()
+}
+
+// SetShutdown records that the client has sent the shutdown request. From
+// then on, [SlogHandler] and [DefaultDiagnosticsPublisher] no longer send
+// messages to the client. [LifecycleHandler] calls it, whatever [lsp.Server]
+// is registered; only a [jsonrpc2.Binder] that does not use that handler has
+// to call it itself.
+func (c *Connection) SetShutdown() {
+	c.shutdown.Store(true)
+}
+
+// Exit records that the client has sent the exit notification, which makes
+// [StartLanguageServer] return. [LifecycleHandler] calls it, whatever
+// [lsp.Server] is registered; only a [jsonrpc2.Binder] that does not use that
+// handler has to call it itself. Calling it more than once has no further
+// effect.
+func (c *Connection) Exit() {
+	c.exitOnce.Do(func() { close(c.exitedChan()) })
+}
+
+// closing reports whether the client has sent the shutdown request or the
+// exit notification, after which the server must not send it messages.
+func (c *Connection) closing() bool {
+	if c.shutdown.Load() {
+		return true
+	}
+	select {
+	case <-c.exitedChan():
+		return true
+	default:
+		return false
+	}
+}
+
+// Exited returns a channel that is closed once the client has sent the exit
+// notification.
+func (c *Connection) Exited() <-chan struct{} {
+	return c.exitedChan()
+}
+
+func (c *Connection) exitedChan() chan struct{} {
+	c.exitedInit.Do(func() { c.exited = make(chan struct{}) })
+	return c.exited
 }
 
 // Initialized reports whether the client has sent the initialize request.

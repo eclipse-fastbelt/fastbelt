@@ -71,7 +71,7 @@ func TestTextDocuments_Lifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Open a document
-	uri := lsp.DocumentURI("file:///test.txt")
+	uri := "file:///test.txt"
 	ds.DidOpen(ctx, &lsp.DidOpenTextDocumentParams{
 		TextDocument: lsp.TextDocumentItem{
 			URI:        uri,
@@ -188,7 +188,7 @@ func TestTextDocuments_IncrementalChanges(t *testing.T) {
 	ds := NewDefaultDocumentSynchronizer(sc)
 	ctx := context.Background()
 
-	uri := lsp.DocumentURI("file:///test.txt")
+	uri := "file:///test.txt"
 	ds.DidOpen(ctx, &lsp.DidOpenTextDocumentParams{
 		TextDocument: lsp.TextDocumentItem{
 			URI:        uri,
@@ -232,7 +232,7 @@ func TestTextDocuments_WillSave(t *testing.T) {
 	ds := NewDefaultDocumentSynchronizer(sc)
 	ctx := context.Background()
 
-	uri := lsp.DocumentURI("file:///test.txt")
+	uri := "file:///test.txt"
 	ds.DidOpen(ctx, &lsp.DidOpenTextDocumentParams{
 		TextDocument: lsp.TextDocumentItem{
 			URI:        uri,
@@ -261,7 +261,7 @@ func TestTextDocuments_WillSaveWaitUntil(t *testing.T) {
 	ds := NewDefaultDocumentSynchronizer(sc)
 	ctx := context.Background()
 
-	uri := lsp.DocumentURI("file:///test.txt")
+	uri := "file:///test.txt"
 	ds.DidOpen(ctx, &lsp.DidOpenTextDocumentParams{
 		TextDocument: lsp.TextDocumentItem{
 			URI:        uri,
@@ -291,7 +291,7 @@ func TestTextDocuments_DidSave(t *testing.T) {
 	ds := NewDefaultDocumentSynchronizer(sc)
 	ctx := context.Background()
 
-	uri := lsp.DocumentURI("file:///test.txt")
+	uri := "file:///test.txt"
 	ds.DidOpen(ctx, &lsp.DidOpenTextDocumentParams{
 		TextDocument: lsp.TextDocumentItem{
 			URI:        uri,

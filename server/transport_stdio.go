@@ -18,7 +18,7 @@ import (
 // [SetupDefaultServices]. If any service is already set, it's not overwritten.
 func SetupStdioServices(sc *service.Container) {
 	if !sc.Has[jsonrpc2.Binder]() {
-		sc.Put[jsonrpc2.Binder](NewDefaultBinder(sc))
+		sc.Put[jsonrpc2.Binder](NewDefaultAsyncCancelBinder(sc))
 	}
 	if !sc.Has[jsonrpc2.Dialer]() {
 		sc.Put[jsonrpc2.Dialer](NewStdioDialer())

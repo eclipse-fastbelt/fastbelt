@@ -57,9 +57,19 @@
 //		sc.Seal()
 //		server.SetDefaultLogger(sc) // send log output to the client
 //		if err := server.StartLanguageServer(context.Background(), sc); err != nil {
-//			log.Fatal(err)
+//			// The client is gone: report on stderr, not through the logger.
+//			fmt.Fprintln(os.Stderr, "Error:", err)
+//			os.Exit(1)
 //		}
 //	}
+//
+// [StartLanguageServer] returns when the client sends the exit notification:
+// without an error if the shutdown request preceded it, so that main returns
+// and the process exits with code 0, and with [ErrExitWithoutShutdown]
+// otherwise, so that the process exits with code 1. The shutdown request and
+// the exit notification are recorded by [LifecycleHandler], independently of
+// the registered [lsp.Server]. From the shutdown request on, no diagnostics
+// or log messages are sent to the client.
 //
 // While the server runs, the [DiagnosticsPublisher] pushes the diagnostics of
 // open documents to the client, and [SlogHandler] sends log records to the

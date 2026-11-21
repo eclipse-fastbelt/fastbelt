@@ -8,6 +8,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"os"
 
 	"typefox.dev/fastbelt/examples/statemachine"
 	"typefox.dev/fastbelt/server"
@@ -27,10 +29,16 @@ func main() {
 	// Send the output of the log and slog packages to the client.
 	server.SetDefaultLogger(sc)
 
-	// StartLanguageServer blocks on the connection until it is closed, which
-	// keeps the WASM instance alive while the worker is running.
+	// StartLanguageServer blocks until the client sends the exit notification
+	// or the connection is closed, which keeps the WASM instance alive while
+	// the worker is running.
 	if err := server.StartLanguageServer(ctx, sc); err != nil {
-		// Logging goes to the worker console via the WASM runtime.
+		if errors.Is(err, server.ErrExitWithoutShutdown) {
+			// The client disposed the server without shutting it down first:
+			// end with exit code 1, as the LSP specification asks, but quietly.
+			os.Exit(1)
+		}
+		// The panic goes to the worker console via the WASM runtime.
 		panic(err)
 	}
 }

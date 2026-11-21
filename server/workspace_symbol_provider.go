@@ -131,7 +131,7 @@ func (p *DefaultWorkspaceSymbolProvider) collectSymbolsFromDocument(doc *core.Do
 				Kind: SymbolKind(node),
 			},
 			Location: lsp.Location{
-				URI:   lsp.DocumentURI(doc.URI.DocumentURI()),
+				URI:   doc.URI.DocumentURI(),
 				Range: textRange.LspRange(doc.TextDoc),
 			},
 		}
