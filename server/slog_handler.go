@@ -28,11 +28,13 @@ import (
 // "build.documents=42".
 //
 // Until the client has sent the initialize request ([Connection.Initialized]),
-// and whenever a record cannot be sent (no connection, or the connection is
+// once it has sent the shutdown request or the exit notification, and
+// whenever a record cannot be sent (no connection, or the connection is
 // closed), the record is written to stderr instead, so that startup errors
 // stay visible and nothing is sent before initialize, as the LSP
-// specification requires. Every handler of the same container, also one
-// wrapped by another handler, switches to the client at initialize.
+// specification requires, or to a client that is tearing down. Every handler
+// of the same container, also one wrapped by another handler, switches to the
+// client at initialize.
 //
 // The handler does not make itself the process-wide default logger; call
 // [SetDefaultLogger] from the server's main to send the output of the
@@ -183,13 +185,14 @@ func appendQuoted(buf []byte, s string) []byte {
 
 var errNoClient = errors.New("no initialized connection to the client")
 
-// send sends msg to the client, once the client has initialized the server.
+// send sends msg to the client, from the time the client has initialized the
+// server until it sends the shutdown request or the exit notification.
 func (h *SlogHandler) send(ctx context.Context, level lsp.MessageType, msg string) error {
 	conn, err := h.sc.Get[*Connection]()
 	if err != nil {
 		return err
 	}
-	if !conn.Initialized() || conn.Value == nil {
+	if !conn.Initialized() || conn.Value == nil || conn.closing() {
 		return errNoClient
 	}
 	lspConn := lsp.ClientDispatcher(conn.Value)

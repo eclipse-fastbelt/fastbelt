@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"runtime/debug"
 	"slices"
@@ -263,15 +264,24 @@ func (s *DefaultLanguageServer) Initialized(ctx context.Context, params *lsp.Ini
 	return nil
 }
 
+// Shutdown cancels the workspace build that is running, if any, without
+// waiting for it to stop. The server keeps running until the exit
+// notification; [lsp.ServerHandler] rejects the requests and drops the
+// notifications that arrive in between, and [LifecycleHandler] records the
+// shutdown, which stops the diagnostics and log messages sent to the client.
 func (s *DefaultLanguageServer) Shutdown(ctx context.Context) error {
+	if lock, err := s.sc.Get[workspace.Lock](); err == nil {
+		// A new write cancels the one in progress. It then waits for that one
+		// to return, which may take a while (loading the workspace files is
+		// never cancelled), so the response does not wait for it.
+		go lock.Write(context.Background(), func(context.Context) {})
+	}
 	return nil
 }
 
+// Exit does nothing: [LifecycleHandler] records the exit notification, which
+// makes [StartLanguageServer] return.
 func (s *DefaultLanguageServer) Exit(ctx context.Context) error {
-	// Close the connection to allow the server to exit
-	if connection := s.sc.MustGet[*Connection](); connection.Value != nil {
-		return connection.Value.Close()
-	}
 	return nil
 }
 
@@ -665,10 +675,25 @@ func (s *DefaultLanguageServer) WorkDoneProgressCancel(ctx context.Context, para
 	return nil
 }
 
+// ErrExitWithoutShutdown is returned by [StartLanguageServer] if the client
+// sent the exit notification without a preceding shutdown request. The LSP
+// specification requires the server process to exit with code 1 in that case,
+// and with code 0 if the shutdown request was received.
+var ErrExitWithoutShutdown = errors.New("exit notification received without a preceding shutdown request")
+
 // StartLanguageServer runs the language server configured in the service
-// container and blocks until its connection is closed. A transport must be
-// registered first, for example with [SetupStdioServices].
-// [DefaultLanguageServer] closes the connection on the LSP exit notification.
+// container and blocks until the client sends the LSP exit notification, the
+// connection is closed, or ctx is done. A transport must be registered first,
+// for example with [SetupStdioServices].
+//
+// It returns nil if the client sent the shutdown request before the exit
+// notification or before closing the stream. Otherwise it returns
+// [ErrExitWithoutShutdown], the error that ended the stream, or the error of
+// ctx. A main function that exits with code 1 on an error thus exits with the
+// code the LSP specification asks for.
+//
+// It does not wait for the stream to end, since a client may keep it open
+// until the server process has exited.
 func StartLanguageServer(ctx context.Context, sc *service.Container) error {
 	dialer, err := sc.Get[jsonrpc2.Dialer]()
 	if err != nil {
@@ -684,12 +709,45 @@ func StartLanguageServer(ctx context.Context, sc *service.Container) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = conn.Close() // Ignore error in defer
-	}()
+	// Run exit handling
+	var exited <-chan struct{}
+	connection, err := sc.Get[*Connection]()
+	if err == nil {
+		exited = connection.Exited()
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- conn.Wait() }()
 
-	// Wait for the connection to close
-	return conn.Wait()
+	// Closing the connection must not be waited for: it waits for the running
+	// handlers, the exit handler among them, and for reading from the stream
+	// to return, which for a stream like stdin only happens when the client
+	// closes it (closing the stdio transport does not interrupt the read).
+	closeConn := func() { go func() { _ = conn.Close() }() }
+
+	select {
+	case <-exited:
+	case <-ctx.Done():
+		closeConn()
+		return ctx.Err()
+	case err := <-closed:
+		// A client may close the stream right after the exit notification;
+		// the notification then still decides the result.
+		select {
+		case <-exited:
+		default:
+			if errors.Is(err, io.EOF) && connection != nil && connection.ShutdownReceived() {
+				// The client closed the stream after an orderly shutdown,
+				// instead of sending the exit notification.
+				return nil
+			}
+			return err
+		}
+	}
+	closeConn()
+	if !connection.ShutdownReceived() {
+		return ErrExitWithoutShutdown
+	}
+	return nil
 }
 
 // toAnySlice converts []lsp.DocumentSymbol to []any for the LSP response.
@@ -704,7 +762,8 @@ func toAnySlice(symbols []lsp.DocumentSymbol) []any {
 // DefaultBinder is the default implementation of the [jsonrpc2.Binder]
 // interface. When the connection is established, it stores it in the
 // [Connection] service and attaches the [lsp.Server] from the service
-// container as the message handler.
+// container as the message handler, wrapped in [RecoverHandler] and
+// [LifecycleHandler].
 type DefaultBinder struct {
 	sc *service.Container
 }
@@ -732,8 +791,32 @@ func (b *DefaultBinder) Bind(ctx context.Context, conn *jsonrpc2.Connection) (js
 		return jsonrpc2.ConnectionOptions{}, err
 	}
 	return jsonrpc2.ConnectionOptions{
-		Handler: RecoverHandler(lsp.ServerHandler(server)),
+		Handler: LifecycleHandler(connection, RecoverHandler(lsp.ServerHandler(server))),
 	}, nil
+}
+
+// LifecycleHandler wraps handler so that the shutdown request and the exit
+// notification are recorded in connection, whatever the [lsp.Server] behind
+// handler does with them: a shutdown request that handler answered without an
+// error calls [Connection.SetShutdown], and an exit notification calls
+// [Connection.Exit] once handler has returned, also if it failed.
+// [StartLanguageServer] relies on both to return and to choose its result.
+func LifecycleHandler(connection *Connection, handler jsonrpc2.Handler) jsonrpc2.Handler {
+	return jsonrpc2.HandlerFunc(func(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+		switch req.Method {
+		case "shutdown":
+			result, err := handler.Handle(ctx, req)
+			if err == nil {
+				connection.SetShutdown()
+			}
+			return result, err
+		case "exit":
+			// The connection cannot be closed here: closing waits for the
+			// running handlers, and this is one of them.
+			defer connection.Exit()
+		}
+		return handler.Handle(ctx, req)
+	})
 }
 
 // RecoverHandler wraps handler so that a panic while handling a message does
