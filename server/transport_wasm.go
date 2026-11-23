@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/exp/jsonrpc2"
 	"typefox.dev/fastbelt/util/service"
+	"typefox.dev/lsp"
 )
 
 // SetupWasmServices registers the transport services for JSON-RPC
@@ -21,7 +22,7 @@ import (
 // set, it's not overwritten.
 func SetupWasmServices(sc *service.Container) {
 	if !sc.Has[jsonrpc2.Binder]() {
-		sc.Put[jsonrpc2.Binder](NewWasmBinder(sc))
+		sc.Put[jsonrpc2.Binder](NewAsyncCancelWasmBinder(sc))
 	}
 	if !sc.Has[jsonrpc2.Dialer]() {
 		sc.Put[jsonrpc2.Dialer](NewWasmDialer())
@@ -136,6 +137,11 @@ type WasmBinder struct {
 // NewWasmBinder creates a binder for the WASM/browser transport.
 func NewWasmBinder(sc *service.Container) *WasmBinder {
 	return &WasmBinder{DefaultBinder{sc: sc}}
+}
+
+// NewWasmBinder creates a binder for the WASM/browser transport, that supports cancellation and concurrent requests.
+func NewAsyncCancelWasmBinder(sc *service.Container) jsonrpc2.Binder {
+	return lsp.CancelBinder(lsp.AsyncBinder(NewWasmBinder(sc)))
 }
 
 func (b *WasmBinder) Bind(ctx context.Context, conn *jsonrpc2.Connection) (jsonrpc2.ConnectionOptions, error) {

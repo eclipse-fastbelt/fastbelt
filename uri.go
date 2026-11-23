@@ -213,8 +213,10 @@ func (u *uri) String() string {
 	return value
 }
 
+// Produces a URI string in the format expected by the language server protocol.
+// Encodes special characters.
 func (u *uri) DocumentURI() lsp.DocumentURI {
-	return lsp.DocumentURI(u.String())
+	return u.String()
 }
 
 func (u *uri) FilePath() string {

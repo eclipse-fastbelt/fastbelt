@@ -192,6 +192,10 @@ func (d *DefaultDiagnosticsPublisher) publishDiagnostics(ctx context.Context, ur
 	if err != nil {
 		return
 	}
+	if connection.closing() {
+		// The client is tearing down and no longer expects diagnostics.
+		return
+	}
 	client := lsp.ClientDispatcher(connection.Value)
 	// Never cancel publishing, even if the build that computed the diagnostics
 	// is already cancelled: nothing publishes them again unless the document changes.

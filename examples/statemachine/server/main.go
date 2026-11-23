@@ -8,7 +8,8 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"os"
 
 	"typefox.dev/fastbelt/examples/statemachine"
 	"typefox.dev/fastbelt/server"
@@ -21,6 +22,9 @@ func main() {
 	// Send the output of the log and slog packages to the client.
 	server.SetDefaultLogger(sc)
 	if err := server.StartLanguageServer(ctx, sc); err != nil {
-		log.Fatalf("Error: %v", err)
+		// The client is gone by now, and stdout may be closed: report the error
+		// on stderr instead of through the logger, which writes to the client.
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
 	}
 }

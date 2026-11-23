@@ -36,7 +36,7 @@ func TestTextDocumentContentOfBuiltinDocument(t *testing.T) {
 	uri := "builtin:///library.statemachine"
 	sc.MustGet[workspace.DocumentManager]().Set(core.NewDocumentFromString(uri, "statemachine", library))
 
-	content, err := srv.TextDocumentContent(ctx, &lsp.TextDocumentContentParams{URI: lsp.DocumentURI(uri)})
+	content, err := srv.TextDocumentContent(ctx, &lsp.TextDocumentContentParams{URI: uri})
 	require.NoError(t, err)
 	assert.Equal(t, library, content.Text)
 

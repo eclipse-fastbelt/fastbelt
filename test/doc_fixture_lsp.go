@@ -211,7 +211,7 @@ func (d *Doc) AssertFoldingRanges(labels ...string) *Doc {
 	}
 	params := &lsp.FoldingRangeParams{
 		TextDocument: lsp.TextDocumentIdentifier{
-			URI: lsp.DocumentURI(d.Document.URI.DocumentURI()),
+			URI: d.Document.URI.DocumentURI(),
 		},
 	}
 	result, err := frProvider.HandleFoldingRangeRequest(d.fixture.ctx, params)
@@ -352,7 +352,7 @@ func (d *Doc) FindSymbolAtLabel(label string) (*lsp.DocumentSymbol, bool) {
 
 	params := &lsp.DocumentSymbolParams{
 		TextDocument: lsp.TextDocumentIdentifier{
-			URI: lsp.DocumentURI(d.Document.URI.DocumentURI()),
+			URI: d.Document.URI.DocumentURI(),
 		},
 	}
 
@@ -427,7 +427,7 @@ func (d *Doc) ExpectSemanticTokens() *SemanticTokenExpectation {
 	semanticTokensProvider := d.fixture.sc.MustGet[server.SemanticTokensProvider]()
 	params := &lsp.SemanticTokensParams{
 		TextDocument: lsp.TextDocumentIdentifier{
-			URI: lsp.DocumentURI(d.Document.URI.DocumentURI()),
+			URI: d.Document.URI.DocumentURI(),
 		},
 	}
 	result, err := semanticTokensProvider.HandleSemanticTokensFullRequest(d.fixture.ctx, params)
