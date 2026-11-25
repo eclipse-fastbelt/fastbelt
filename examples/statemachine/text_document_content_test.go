@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	core "typefox.dev/fastbelt"
 	"typefox.dev/fastbelt/server"
+	"typefox.dev/fastbelt/textdoc"
 	"typefox.dev/fastbelt/util/service"
 	"typefox.dev/fastbelt/workspace"
 	"typefox.dev/lsp"
@@ -46,6 +47,39 @@ func TestTextDocumentContentOfBuiltinDocument(t *testing.T) {
 	sc.MustGet[workspace.DocumentManager]().Set(core.NewDocumentFromString("file:///ws/a.statemachine", "statemachine", library))
 	_, err = srv.TextDocumentContent(ctx, &lsp.TextDocumentContentParams{URI: "file:///ws/a.statemachine"})
 	assert.Error(t, err)
+}
+
+// A document served by the content provider only exists in the language
+// server, not in the file system. The client opens it like any other document
+// when it shows it, and closing it again must not remove it from the workspace.
+func TestClosingBuiltinDocumentKeepsIt(t *testing.T) {
+	// The server is not initialized: without a client connection, the
+	// diagnostics publisher must not be hooked into the document lifecycle.
+	sc := CreateLspServices(func(sc *service.Container) {
+		sc.Put(server.NewDefaultTextDocumentContentProvider(sc, "builtin"))
+	})
+	ctx := context.Background()
+
+	const library = "statemachine Library\nevents reset\n"
+	uri := lsp.DocumentURI("builtin:///library.statemachine")
+	docs := sc.MustGet[workspace.DocumentManager]()
+	docs.Set(core.NewDocumentFromString(string(uri), "statemachine", library))
+
+	synchronizer := sc.MustGet[server.DocumentSynchronizer]()
+	synchronizer.DidOpen(ctx, &lsp.DidOpenTextDocumentParams{TextDocument: lsp.TextDocumentItem{
+		URI: uri, LanguageID: "statemachine", Version: 1, Text: library,
+	}})
+	synchronizer.DidClose(ctx, &lsp.DidCloseTextDocumentParams{
+		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
+	})
+	// Wait for the write of didClose to finish.
+	sc.MustGet[workspace.Lock]().Write(ctx, func(context.Context) {})
+
+	assert.Nil(t, sc.MustGet[textdoc.Store]().GetOverlay(core.NormalizeURI(uri)), "the overlay was not removed")
+	assert.True(t, docs.Has(core.ParseURI(string(uri))), "the builtin document was removed from the workspace")
+	content, err := sc.MustGet[server.TextDocumentContentProvider]().HandleTextDocumentContentRequest(ctx, &lsp.TextDocumentContentParams{URI: uri})
+	require.NoError(t, err)
+	assert.Equal(t, library, content.Text)
 }
 
 func TestNoTextDocumentContentCapabilityWithoutProvider(t *testing.T) {

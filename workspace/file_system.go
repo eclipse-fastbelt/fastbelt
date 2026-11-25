@@ -6,10 +6,12 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	core "typefox.dev/fastbelt"
 )
@@ -26,15 +28,37 @@ type DirEntry struct {
 	URI core.URI
 }
 
-// FileSystem defines the interface for reading data from an arbitrary file system.
+// FileSystemProvider reads data from a single backend, such as the local disk
+// or an in-memory tree. A provider is registered with a [FileSystem] for a URI
+// scheme and only receives URIs of that scheme, so it does not need to inspect
+// the scheme itself.
+//
+// Errors for missing entries should wrap [fs.ErrNotExist].
+type FileSystemProvider interface {
+	// Stat returns the file system entry for the given URI, or an error if it does not exist.
+	Stat(ctx context.Context, uri core.URI) (DirEntry, error)
+	// ReadFile reads the content of the file at the given URI and returns it as a byte slice.
+	ReadFile(ctx context.Context, uri core.URI) ([]byte, error)
+	// ReadDir reads the contents of the directory at the given URI and returns a slice of [DirEntry] for its entries.
+	ReadDir(ctx context.Context, uri core.URI) ([]DirEntry, error)
+}
+
+// FileSystem defines the interface for reading data from arbitrary file systems.
+// It dispatches every request to the [FileSystemProvider] registered for the
+// scheme of the requested URI.
 type FileSystem interface {
+	// RegisterProvider registers the [FileSystemProvider] for all URIs with the given scheme,
+	// replacing any provider previously registered for that scheme.
+	// The returned function removes the registration again; it does nothing if
+	// the provider has been replaced in the meantime.
+	RegisterProvider(scheme string, provider FileSystemProvider) (unregister func())
 	// Exists checks if the given URI exists in the file system.
 	Exists(ctx context.Context, uri core.URI) bool
 	// Stat returns the file system entry for the given URI, or an error if it does not exist.
 	Stat(ctx context.Context, uri core.URI) (DirEntry, error)
 	// ReadFile reads the content of the file at the given URI and returns it as a byte slice.
 	ReadFile(ctx context.Context, uri core.URI) ([]byte, error)
-	// ReadDir reads the contents of the directory at the given URI and returns a slice of DirEntry for its entries.
+	// ReadDir reads the contents of the directory at the given URI and returns a slice of [DirEntry] for its entries.
 	ReadDir(ctx context.Context, uri core.URI) ([]DirEntry, error)
 }
 
@@ -82,27 +106,110 @@ func walkDir(ctx context.Context, fs FileSystem, entry DirEntry, fn func(DirEntr
 	return nil
 }
 
-// DiskFileSystem is a FileSystem implementation that reads from the local disk using the os package.
-type DiskFileSystem struct{}
-
-// NewDiskFileSystem creates a new instance of DiskFileSystem.
-func NewDiskFileSystem() FileSystem {
-	return &DiskFileSystem{}
+// DefaultFileSystem is the default [FileSystem] implementation. It holds no
+// data itself, but delegates to the provider registered for a URI's scheme.
+// It is safe for concurrent use; the registered providers are responsible for
+// their own synchronization.
+type DefaultFileSystem struct {
+	mu        sync.RWMutex
+	providers map[string]*providerRegistration
 }
 
-// Exists checks if the given URI exists in the local file system.
-func (s *DiskFileSystem) Exists(ctx context.Context, uri core.URI) bool {
+// providerRegistration is a single call of [DefaultFileSystem.RegisterProvider].
+// Its pointer identifies the registration: providers themselves cannot be
+// compared reliably, as they may be of an uncomparable type, be registered
+// more than once, or be distinct zero-size values that share an address.
+type providerRegistration struct {
+	provider FileSystemProvider
+}
+
+// NewDefaultFileSystem creates a [FileSystem] without any registered providers.
+func NewDefaultFileSystem() FileSystem {
+	return &DefaultFileSystem{
+		providers: make(map[string]*providerRegistration),
+	}
+}
+
+// NewDiskFileSystem creates a [FileSystem] that serves the "file" scheme from the local disk
+// through a [DiskFileSystemProvider].
+func NewDiskFileSystem() FileSystem {
+	s := NewDefaultFileSystem()
+	s.RegisterProvider(core.FileScheme, NewDiskFileSystemProvider())
+	return s
+}
+
+// RegisterProvider registers the [FileSystemProvider] for all URIs with the given scheme.
+func (s *DefaultFileSystem) RegisterProvider(scheme string, provider FileSystemProvider) func() {
+	registration := &providerRegistration{provider: provider}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.providers[scheme] = registration
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.providers[scheme] == registration {
+			delete(s.providers, scheme)
+		}
+	}
+}
+
+// provider returns the provider registered for the scheme of the given URI.
+// The returned error wraps [fs.ErrNotExist] if there is none.
+func (s *DefaultFileSystem) provider(uri core.URI) (FileSystemProvider, error) {
+	s.mu.RLock()
+	registration, ok := s.providers[uri.Scheme()]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("no file system provider for scheme %q: %w", uri.Scheme(), fs.ErrNotExist)
+	}
+	return registration.provider, nil
+}
+
+// Exists checks if the given URI exists in the file system.
+func (s *DefaultFileSystem) Exists(ctx context.Context, uri core.URI) bool {
 	_, err := s.Stat(ctx, uri)
 	return err == nil
 }
 
 // Stat returns the file system entry for the given URI, or an error if it does not exist.
-func (s *DiskFileSystem) Stat(ctx context.Context, uri core.URI) (DirEntry, error) {
-	if uri.Scheme() != core.FileScheme {
-		return DirEntry{}, os.ErrNotExist
+func (s *DefaultFileSystem) Stat(ctx context.Context, uri core.URI) (DirEntry, error) {
+	provider, err := s.provider(uri)
+	if err != nil {
+		return DirEntry{}, err
 	}
-	path := uri.FilePath()
-	info, err := os.Lstat(path)
+	return provider.Stat(ctx, uri)
+}
+
+// ReadFile reads the content of the file at the given URI and returns it as a byte slice.
+func (s *DefaultFileSystem) ReadFile(ctx context.Context, uri core.URI) ([]byte, error) {
+	provider, err := s.provider(uri)
+	if err != nil {
+		return nil, err
+	}
+	return provider.ReadFile(ctx, uri)
+}
+
+// ReadDir reads the contents of the directory at the given URI and returns a slice of [DirEntry] for its entries.
+func (s *DefaultFileSystem) ReadDir(ctx context.Context, uri core.URI) ([]DirEntry, error) {
+	provider, err := s.provider(uri)
+	if err != nil {
+		return nil, err
+	}
+	return provider.ReadDir(ctx, uri)
+}
+
+// DiskFileSystemProvider is a [FileSystemProvider] that reads from the local disk using the [os] package.
+// It is meant to be registered for the "file" scheme.
+type DiskFileSystemProvider struct{}
+
+// NewDiskFileSystemProvider creates a new instance of [DiskFileSystemProvider].
+func NewDiskFileSystemProvider() *DiskFileSystemProvider {
+	return &DiskFileSystemProvider{}
+}
+
+// Stat returns the file system entry for the given URI, or an error if it does not exist.
+func (s *DiskFileSystemProvider) Stat(ctx context.Context, uri core.URI) (DirEntry, error) {
+	info, err := os.Lstat(uri.FilePath())
 	if err != nil {
 		return DirEntry{}, err
 	}
@@ -115,20 +222,13 @@ func (s *DiskFileSystem) Stat(ctx context.Context, uri core.URI) (DirEntry, erro
 }
 
 // ReadFile reads the content of the file at the given URI and returns it as a byte slice.
-func (s *DiskFileSystem) ReadFile(ctx context.Context, uri core.URI) ([]byte, error) {
-	if uri.Scheme() != core.FileScheme {
-		return nil, os.ErrNotExist
-	}
+func (s *DiskFileSystemProvider) ReadFile(ctx context.Context, uri core.URI) ([]byte, error) {
 	return os.ReadFile(uri.FilePath())
 }
 
-// ReadDir reads the contents of the directory at the given URI and returns a slice of DirEntry for its entries.
-func (s *DiskFileSystem) ReadDir(ctx context.Context, uri core.URI) ([]DirEntry, error) {
-	if uri.Scheme() != core.FileScheme {
-		return nil, os.ErrNotExist
-	}
-	path := uri.FilePath()
-	entries, err := os.ReadDir(path)
+// ReadDir reads the contents of the directory at the given URI and returns a slice of [DirEntry] for its entries.
+func (s *DiskFileSystemProvider) ReadDir(ctx context.Context, uri core.URI) ([]DirEntry, error) {
+	entries, err := os.ReadDir(uri.FilePath())
 	if err != nil {
 		return nil, err
 	}
@@ -156,17 +256,24 @@ type virtualDirEntry struct {
 
 func (e *virtualDirEntry) isDir() bool { return e.children != nil }
 
-// VirtualFileSystem is an in-memory FileSystem. Each URI scheme has its own
-// directory trie rooted at an implicit root directory.
-//
-// Note: not safe for concurrent use; wrap with a workspace lock if shared.
-type VirtualFileSystem struct {
-	schemeRoots map[string]*virtualDirEntry
+func newVirtualDir(name string) *virtualDirEntry {
+	return &virtualDirEntry{name: name, children: map[string]*virtualDirEntry{}}
 }
 
-func NewVirtualFileSystem() *VirtualFileSystem {
-	return &VirtualFileSystem{
-		schemeRoots: make(map[string]*virtualDirEntry),
+// VirtualFileSystemProvider is an in-memory [FileSystemProvider]. It keeps a
+// single directory trie that is addressed by URI path only: the scheme is
+// determined by the registration with a [FileSystem]. Register separate
+// instances to keep the contents of multiple schemes apart.
+//
+// Note: not safe for concurrent use; wrap with a workspace lock if shared.
+type VirtualFileSystemProvider struct {
+	root *virtualDirEntry
+}
+
+// NewVirtualFileSystemProvider creates an empty [VirtualFileSystemProvider].
+func NewVirtualFileSystemProvider() *VirtualFileSystemProvider {
+	return &VirtualFileSystemProvider{
+		root: newVirtualDir(""),
 	}
 }
 
@@ -177,11 +284,8 @@ func segments(uri core.URI) []string {
 
 // find walks the trie for the given URI and returns the node, or nil if any
 // segment is missing or traverses through a file.
-func (s *VirtualFileSystem) find(uri core.URI) *virtualDirEntry {
-	node, ok := s.schemeRoots[uri.Scheme()]
-	if !ok {
-		return nil
-	}
+func (s *VirtualFileSystemProvider) find(uri core.URI) *virtualDirEntry {
+	node := s.root
 	for _, seg := range segments(uri) {
 		if !node.isDir() {
 			return nil
@@ -195,24 +299,14 @@ func (s *VirtualFileSystem) find(uri core.URI) *virtualDirEntry {
 	return node
 }
 
-// rootFor returns the root directory for a scheme, creating it on first use.
-func (s *VirtualFileSystem) rootFor(scheme string) *virtualDirEntry {
-	root, ok := s.schemeRoots[scheme]
-	if !ok {
-		root = &virtualDirEntry{children: map[string]*virtualDirEntry{}}
-		s.schemeRoots[scheme] = root
-	}
-	return root
-}
-
-// mkdirAll walks segs from the scheme root, creating missing directories. It
+// mkdirAll walks segs from the root, creating missing directories. It
 // returns an error if a segment collides with an existing file.
-func (s *VirtualFileSystem) mkdirAll(scheme string, segs []string) (*virtualDirEntry, error) {
-	node := s.rootFor(scheme)
+func (s *VirtualFileSystemProvider) mkdirAll(segs []string) (*virtualDirEntry, error) {
+	node := s.root
 	for _, seg := range segs {
 		child, ok := node.children[seg]
 		if !ok {
-			child = &virtualDirEntry{name: seg, children: map[string]*virtualDirEntry{}}
+			child = newVirtualDir(seg)
 			node.children[seg] = child
 		} else if !child.isDir() {
 			return nil, os.ErrExist
@@ -230,11 +324,7 @@ func entryFor(node *virtualDirEntry, uri core.URI) DirEntry {
 	}
 }
 
-func (s *VirtualFileSystem) Exists(ctx context.Context, uri core.URI) bool {
-	return s.find(uri) != nil
-}
-
-func (s *VirtualFileSystem) Stat(ctx context.Context, uri core.URI) (DirEntry, error) {
+func (s *VirtualFileSystemProvider) Stat(ctx context.Context, uri core.URI) (DirEntry, error) {
 	node := s.find(uri)
 	if node == nil {
 		return DirEntry{}, os.ErrNotExist
@@ -242,7 +332,7 @@ func (s *VirtualFileSystem) Stat(ctx context.Context, uri core.URI) (DirEntry, e
 	return entryFor(node, uri), nil
 }
 
-func (s *VirtualFileSystem) ReadFile(ctx context.Context, uri core.URI) ([]byte, error) {
+func (s *VirtualFileSystemProvider) ReadFile(ctx context.Context, uri core.URI) ([]byte, error) {
 	node := s.find(uri)
 	if node == nil || node.isDir() {
 		return nil, os.ErrNotExist
@@ -250,7 +340,7 @@ func (s *VirtualFileSystem) ReadFile(ctx context.Context, uri core.URI) ([]byte,
 	return node.content, nil
 }
 
-func (s *VirtualFileSystem) ReadDir(ctx context.Context, uri core.URI) ([]DirEntry, error) {
+func (s *VirtualFileSystemProvider) ReadDir(ctx context.Context, uri core.URI) ([]DirEntry, error) {
 	node := s.find(uri)
 	if node == nil || !node.isDir() {
 		return nil, os.ErrNotExist
@@ -266,12 +356,12 @@ func (s *VirtualFileSystem) ReadDir(ctx context.Context, uri core.URI) ([]DirEnt
 	return result, nil
 }
 
-func (s *VirtualFileSystem) Mkdir(uri core.URI) error {
+func (s *VirtualFileSystemProvider) Mkdir(uri core.URI) error {
 	segs := segments(uri)
 	if len(segs) == 0 {
 		return os.ErrExist // root always exists
 	}
-	parent, err := s.mkdirAll(uri.Scheme(), segs[:len(segs)-1])
+	parent, err := s.mkdirAll(segs[:len(segs)-1])
 	if err != nil {
 		return err
 	}
@@ -279,16 +369,16 @@ func (s *VirtualFileSystem) Mkdir(uri core.URI) error {
 	if _, ok := parent.children[last]; ok {
 		return os.ErrExist
 	}
-	parent.children[last] = &virtualDirEntry{name: last, children: map[string]*virtualDirEntry{}}
+	parent.children[last] = newVirtualDir(last)
 	return nil
 }
 
-func (s *VirtualFileSystem) WriteFile(uri core.URI, content []byte) error {
+func (s *VirtualFileSystemProvider) WriteFile(uri core.URI, content []byte) error {
 	segs := segments(uri)
 	if len(segs) == 0 {
 		return os.ErrInvalid // cannot write the root
 	}
-	parent, err := s.mkdirAll(uri.Scheme(), segs[:len(segs)-1])
+	parent, err := s.mkdirAll(segs[:len(segs)-1])
 	if err != nil {
 		return err
 	}
@@ -303,19 +393,15 @@ func (s *VirtualFileSystem) WriteFile(uri core.URI, content []byte) error {
 	return nil
 }
 
-func (s *VirtualFileSystem) Delete(uri core.URI) error {
+// Delete removes the file or directory at the given URI, including all of its
+// contents. Deleting the root empties the provider; the root itself remains.
+func (s *VirtualFileSystemProvider) Delete(uri core.URI) error {
 	segs := segments(uri)
 	if len(segs) == 0 {
-		if _, ok := s.schemeRoots[uri.Scheme()]; !ok {
-			return os.ErrNotExist
-		}
-		delete(s.schemeRoots, uri.Scheme())
+		s.root = newVirtualDir("")
 		return nil
 	}
-	dir, ok := s.schemeRoots[uri.Scheme()]
-	if !ok {
-		return os.ErrNotExist
-	}
+	dir := s.root
 	for _, seg := range segs[:len(segs)-1] {
 		child, ok := dir.children[seg]
 		if !ok || !child.isDir() {
