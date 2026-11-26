@@ -15,8 +15,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	core "typefox.dev/fastbelt"
 	"typefox.dev/fastbelt/internal/grammar"
 	"typefox.dev/fastbelt/pluginapi"
+	"typefox.dev/fastbelt/pluginapi/ast"
 	"typefox.dev/fastbelt/pluginapi/tokens"
 )
 
@@ -585,4 +587,100 @@ func requireModeConstants(t *testing.T, dir string, modes []*tokens.TokenMode) {
 		require.Equal(t, strconv.Itoa(mode.Index), match[1], "mode %q", mode.Name)
 	}
 	require.Len(t, regexp.MustCompile(`(?m)^\s*TokenMode_\w+\s*=`).FindAllString(string(code), -1), len(modes))
+}
+
+// splitGreetingGrammarA and splitGreetingGrammarB form a grammar whose
+// Farewell rule lives in a second file.
+const (
+	splitGreetingGrammarA = `
+		grammar Multi
+		interface Greeting { Name string }
+		interface Farewell { Name string }
+		entry Greeting: "hello" Name=ID
+	` + multiTokens
+	splitGreetingGrammarB = "grammar Multi\nFarewell: \"goodbye\" Name=ID\n"
+)
+
+func TestBuildPassesSourcesToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	aText, bText := splitGreetingGrammarA, splitGreetingGrammarB
+	// Written in reverse order to check the sorting.
+	ctx := &BuildContext{
+		Input:     writeGrammarDir(t, "b.fb", bText, "a.fb", aText),
+		Output:    t.TempDir(),
+		Package:   "multi",
+		Languages: []Language{{Entry: "Greeting", LanguageID: "greeting"}},
+		Plugins:   []pluginapi.Plugin{plugin},
+	}
+	require.NoError(t, ctx.Build())
+
+	require.Len(t, plugin.artifacts, 1)
+	sources := plugin.artifacts[0].Sources
+	require.Len(t, sources, 2)
+	require.Equal(t, filepath.Join(ctx.Input, "a.fb"), sources[0].Path)
+	require.Equal(t, filepath.Join(ctx.Input, "b.fb"), sources[1].Path)
+	require.True(t, filepath.IsAbs(sources[0].Path))
+	require.Equal(t, aText, sources[0].Text)
+	require.Equal(t, bText, sources[1].Text)
+	line, col := sources[1].LineColumn(strings.Index(bText, "goodbye"))
+	require.Equal(t, []int{2, 12}, []int{line, col})
+}
+
+func TestBuildPassesSingleSourceToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	ctx := greetingBuildContext(t, plugin)
+	require.NoError(t, ctx.Build())
+
+	sources := plugin.artifacts[0].Sources
+	require.Len(t, sources, 1)
+	require.Equal(t, filepath.Join(ctx.Input, "a.fb"), sources[0].Path)
+	require.Equal(t, modeGrammar, sources[0].Text)
+}
+
+func TestLoadGrammarDirRecordsNodeSourcesBeforeMerging(t *testing.T) {
+	dir := writeGrammarDir(t,
+		"a.fb", splitGreetingGrammarA,
+		"b.fb", splitGreetingGrammarB,
+	)
+	// A relative input dir still yields absolute source paths.
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	rel, err := filepath.Rel(wd, dir)
+	require.NoError(t, err)
+
+	loaded, err := loadGrammarDir(rel)
+	require.NoError(t, err)
+	require.Len(t, loaded.sources, 2)
+	a, b := loaded.sources[0], loaded.sources[1]
+	require.Equal(t, filepath.Join(dir, "a.fb"), a.Path)
+	require.Equal(t, filepath.Join(dir, "b.fb"), b.Path)
+
+	// The merged root has no single source.
+	require.NotContains(t, loaded.nodeSources, core.AstNode(loaded.grammar))
+	wantSources := map[string]*ast.SourceFile{"Greeting": a, "Farewell": b}
+	wantTexts := map[string]string{"Greeting": `entry Greeting: "hello" Name=ID`, "Farewell": `Farewell: "goodbye" Name=ID`}
+	for _, rule := range loaded.grammar.Rules() {
+		want := wantSources[rule.Name()]
+		for node := range core.AllNodes(rule) {
+			require.Same(t, want, loaded.nodeSources[node], "rule %s", rule.Name())
+		}
+		// The merged document has no text, so the range must be read from the
+		// recorded source.
+		rng := rule.TextRange()
+		text := ast.Location{Source: want, Start: int(rng.Start), End: int(rng.End)}.Text()
+		require.Equal(t, wantTexts[rule.Name()], text)
+	}
+	for _, iface := range loaded.grammar.Interfaces() {
+		require.Same(t, a, loaded.nodeSources[iface])
+	}
+}
+
+func TestLoadGrammarDirRecordsNodeSourcesForSingleFile(t *testing.T) {
+	dir := writeGrammarDir(t, "a.fb", modeGrammar)
+	loaded, err := loadGrammarDir(dir)
+	require.NoError(t, err)
+	require.Len(t, loaded.sources, 1)
+	for node := range core.AllNodes(loaded.grammar) {
+		require.Same(t, loaded.sources[0], loaded.nodeSources[node])
+	}
 }

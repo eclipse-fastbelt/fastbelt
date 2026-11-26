@@ -25,6 +25,7 @@ import (
 	"typefox.dev/fastbelt/internal/generator"
 	"typefox.dev/fastbelt/internal/grammar"
 	"typefox.dev/fastbelt/pluginapi"
+	"typefox.dev/fastbelt/pluginapi/ast"
 	"typefox.dev/fastbelt/textdoc"
 	"typefox.dev/fastbelt/workspace"
 	"typefox.dev/lsp"
@@ -83,10 +84,11 @@ func (c *BuildContext) Build() error {
 	if err != nil {
 		return err
 	}
-	g, err := LoadGrammarDir(fullInput)
+	loaded, err := loadGrammarDir(fullInput)
 	if err != nil {
 		return err
 	}
+	g := loaded.grammar
 
 	entries := make([]grammar.ParserRule, len(c.Languages))
 	entryModes := make([]string, len(c.Languages))
@@ -169,7 +171,7 @@ func (c *BuildContext) Build() error {
 	if len(c.Plugins) == 0 {
 		return nil
 	}
-	artifacts, err := buildArtifacts(fullInput, c.Languages, gen)
+	artifacts, err := buildArtifacts(fullInput, c.Languages, loaded, gen)
 	if err != nil {
 		return fmt.Errorf("building plugin artifacts: %w", err)
 	}
@@ -178,7 +180,7 @@ func (c *BuildContext) Build() error {
 
 // buildArtifacts converts the configured languages and the result of the
 // generation into the artifacts handed to plugins.
-func buildArtifacts(inputDir string, languages []Language, gen *generation) (pluginapi.BuildArtifacts, error) {
+func buildArtifacts(inputDir string, languages []Language, loaded *loadedGrammar, gen *generation) (pluginapi.BuildArtifacts, error) {
 	configs := make([]artifacts.LanguageConfig, len(languages))
 	for i, lang := range languages {
 		configs[i] = artifacts.LanguageConfig{
@@ -206,6 +208,7 @@ func buildArtifacts(inputDir string, languages []Language, gen *generation) (plu
 		Languages:  langs,
 		TokenTypes: tokenTypes,
 		TokenModes: tokenModes,
+		Sources:    loaded.sources,
 	}, nil
 }
 
@@ -233,6 +236,35 @@ func runPlugins(plugins []pluginapi.Plugin, artifacts pluginapi.BuildArtifacts) 
 // one grammar and returns the combined result. Diagnostics are printed; any
 // error diagnostic aborts with an error.
 func LoadGrammarDir(dir string) (grammar.Grammar, error) {
+	loaded, err := loadGrammarDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	return loaded.grammar, nil
+}
+
+// loadedGrammar is the result of loading a grammar directory.
+type loadedGrammar struct {
+	// grammar is the combined grammar, see [parseAndMerge].
+	grammar grammar.Grammar
+	// sources are the grammar files, sorted by path.
+	sources []*ast.SourceFile
+	// nodeSources maps every parsed node to the file it was parsed from. It is
+	// recorded before merging, which moves all nodes into one fake document.
+	// The merged root of a multi-file grammar has no entry, and neither have
+	// nodes created later by infix expansion: the rule bodies can find their
+	// file via their InfixRule container, but the synthesized operator token
+	// groups are attached to the grammar root.
+	nodeSources map[core.AstNode]*ast.SourceFile
+}
+
+// loadGrammarDir implements [LoadGrammarDir] and keeps the source files.
+func loadGrammarDir(dir string) (*loadedGrammar, error) {
+	// Source paths are absolute, also for a relative dir.
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
 	// Glob returns the matches sorted, so the merged grammar is deterministic.
 	files, err := filepath.Glob(filepath.Join(dir, "*.fb"))
 	if err != nil {
@@ -246,18 +278,20 @@ func LoadGrammarDir(dir string) (grammar.Grammar, error) {
 
 // parseAndMerge parses every grammar file in a single shared container (so
 // cross-file references link), aborts on any error diagnostic, and returns the
-// combined grammar. A single file is returned as-is. Multiple files are merged
-// into one grammar.
-func parseAndMerge(files []string) (grammar.Grammar, error) {
+// combined grammar with its source files. A single file's grammar is used
+// as-is; multiple files are merged into one grammar.
+func parseAndMerge(files []string) (*loadedGrammar, error) {
 	sc := grammar.CreateServices()
 	documents := sc.MustGet[workspace.DocumentManager]()
 
 	docs := make([]*core.Document, 0, len(files))
+	sources := make([]*ast.SourceFile, 0, len(files))
 	for _, path := range files {
 		text, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
+		sources = append(sources, ast.NewSourceFile(path, string(text)))
 		file := textdoc.NewFile(lsp.URIFromPath(path), "fb", 0, string(text))
 		doc := core.NewDocument(file)
 		documents.Set(doc)
@@ -273,17 +307,24 @@ func parseAndMerge(files []string) (grammar.Grammar, error) {
 	}
 
 	grammars := make([]grammar.Grammar, 0, len(docs))
-	for _, doc := range docs {
+	nodeSources := map[core.AstNode]*ast.SourceFile{}
+	for i, doc := range docs {
 		g, ok := doc.Root.(grammar.Grammar)
 		if !ok {
 			return nil, fmt.Errorf("parse result is not a Grammar")
 		}
 		grammars = append(grammars, g)
+		for node := range core.AllNodes(g) {
+			nodeSources[node] = sources[i]
+		}
 	}
+	loaded := &loadedGrammar{sources: sources, nodeSources: nodeSources}
 	if len(grammars) == 1 {
-		return grammars[0], nil
+		loaded.grammar = grammars[0]
+	} else {
+		loaded.grammar = mergeGrammars(grammars)
 	}
-	return mergeGrammars(grammars), nil
+	return loaded, nil
 }
 
 // mergeGrammars concatenates several grammars into a single one (elements

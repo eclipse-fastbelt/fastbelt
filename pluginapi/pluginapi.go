@@ -4,7 +4,10 @@
 
 package pluginapi
 
-import "typefox.dev/fastbelt/pluginapi/tokens"
+import (
+	"typefox.dev/fastbelt/pluginapi/ast"
+	"typefox.dev/fastbelt/pluginapi/tokens"
+)
 
 // Plugin produces additional output from the artifacts of a Fastbelt build.
 // See the package documentation for when and how plugins are called.
@@ -37,4 +40,6 @@ type BuildArtifacts struct {
 	// [tokens.TokenMode] for how they relate to the declared modes. There is
 	// at least one.
 	TokenModes []*tokens.TokenMode
+	// Sources are the .fb grammar files of the build, sorted by path.
+	Sources []*ast.SourceFile
 }
