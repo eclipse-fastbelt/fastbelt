@@ -8,7 +8,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -503,4 +505,84 @@ func TestBuildPassesTokenTypesToPlugin(t *testing.T) {
 	i := slices.IndexFunc(tts, func(tt *tokens.TokenType) bool { return tt.Name == "BinaryExpressionOperator" })
 	require.NotEqual(t, -1, i)
 	require.True(t, tts[i].Synthetic)
+}
+
+func TestBuildPassesTokenModesToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	out := t.TempDir()
+	ctx := &BuildContext{
+		Input:   writeGrammarDir(t, "a.fb", modeGrammar),
+		Output:  out,
+		Package: "multi",
+		Languages: []Language{
+			{Entry: "Greeting", LanguageID: "greeting"},
+			{Entry: "Farewell", LanguageID: "farewell", TokenMode: "Inner"},
+		},
+		Plugins: []pluginapi.Plugin{plugin},
+	}
+	require.NoError(t, ctx.Build())
+
+	require.Len(t, plugin.artifacts, 1)
+	artifacts := plugin.artifacts[0]
+	modes := artifacts.TokenModes
+	require.Len(t, modes, 2)
+	requireModeConstants(t, out, modes)
+	def, inner := modes[0], modes[1]
+	require.Equal(t, "default", def.Name)
+	require.Equal(t, "Inner", inner.Name)
+	require.Same(t, def, artifacts.Languages[0].EntryMode)
+	require.Same(t, inner, artifacts.Languages[1].EntryMode)
+	// Members link to the shared token types.
+	hello := def.Members[0]
+	require.Same(t, artifacts.TokenTypes[hello.TokenType.Index], hello.TokenType)
+	require.Equal(t, &tokens.TokenCommand{Kind: tokens.CommandPush, Target: inner}, hello.Command)
+}
+
+func TestBuildPassesSyntheticTokenModesToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	out := t.TempDir()
+	ctx := &BuildContext{
+		Input: writeGrammarDir(t, "a.fb", `
+			grammar Multi
+			interface Greeting { Name string }
+			interface Farewell { Name string }
+			entry Greeting: "hello" Name=ID
+			entry Farewell: "goodbye" Name=ID
+		`+multiTokens),
+		Output:  out,
+		Package: "multi",
+		Languages: []Language{
+			{Entry: "Greeting", LanguageID: "greeting"},
+			{Entry: "Farewell", LanguageID: "farewell"},
+		},
+		Plugins: []pluginapi.Plugin{plugin},
+	}
+	require.NoError(t, ctx.Build())
+
+	require.Len(t, plugin.artifacts, 1)
+	artifacts := plugin.artifacts[0]
+	modes := artifacts.TokenModes
+	require.Len(t, modes, 2)
+	requireModeConstants(t, out, modes)
+	for i, lang := range artifacts.Languages {
+		require.Same(t, modes[i], lang.EntryMode)
+		require.Equal(t, lang.Entry, lang.EntryMode.Name)
+		require.True(t, lang.EntryMode.Synthetic)
+	}
+}
+
+// requireModeConstants asserts that the generated lexer in dir declares a
+// TokenMode_<Name> constant with the index of each mode.
+func requireModeConstants(t *testing.T, dir string, modes []*tokens.TokenMode) {
+	t.Helper()
+	code, err := os.ReadFile(filepath.Join(dir, "lexer_gen.go"))
+	require.NoError(t, err)
+	for i, mode := range modes {
+		require.Equal(t, i, mode.Index)
+		pattern := regexp.MustCompile(`(?m)^\s*TokenMode_` + regexp.QuoteMeta(mode.Name) + `\s*=\s*(\d+)$`)
+		match := pattern.FindStringSubmatch(string(code))
+		require.NotNil(t, match, "constant of mode %q", mode.Name)
+		require.Equal(t, strconv.Itoa(mode.Index), match[1], "mode %q", mode.Name)
+	}
+	require.Len(t, regexp.MustCompile(`(?m)^\s*TokenMode_\w+\s*=`).FindAllString(string(code), -1), len(modes))
 }

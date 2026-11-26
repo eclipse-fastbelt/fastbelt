@@ -191,12 +191,21 @@ func buildArtifacts(inputDir string, languages []Language, gen *generation) (plu
 	if err != nil {
 		return pluginapi.BuildArtifacts{}, err
 	}
+	tokenModes, entryModes, err := artifacts.TokenModes(gen.grammar, gen.entries, gen.entryModes, gen.tokenTypes, tokenTypes)
+	if err != nil {
+		return pluginapi.BuildArtifacts{}, err
+	}
+	langs := artifacts.Languages(configs)
+	for i, lang := range langs {
+		lang.EntryMode = entryModes[i]
+	}
 	return pluginapi.BuildArtifacts{
 		InputDir:   inputDir,
 		OutputDir:  gen.outDir,
 		Package:    gen.pkg,
-		Languages:  artifacts.Languages(configs),
+		Languages:  langs,
 		TokenTypes: tokenTypes,
+		TokenModes: tokenModes,
 	}, nil
 }
 

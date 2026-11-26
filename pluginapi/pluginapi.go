@@ -32,4 +32,9 @@ type BuildArtifacts struct {
 	// TokenTypes are the token types of the generated lexer, indexed by their
 	// runtime token index: TokenTypes[i].Index == i. Index 0 is EOF.
 	TokenTypes []*tokens.TokenType
+	// TokenModes are the token modes the generated lexer runs, indexed by
+	// their generated mode constant: TokenModes[i].Index == i. See
+	// [tokens.TokenMode] for how they relate to the declared modes. There is
+	// at least one.
+	TokenModes []*tokens.TokenMode
 }
