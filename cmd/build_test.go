@@ -20,6 +20,7 @@ import (
 	"typefox.dev/fastbelt/pluginapi"
 	"typefox.dev/fastbelt/pluginapi/ast"
 	"typefox.dev/fastbelt/pluginapi/tokens"
+	"typefox.dev/fastbelt/pluginapi/types"
 )
 
 // writeGrammarDir writes the given (name, source) pairs into a fresh temp
@@ -932,4 +933,64 @@ func TestBuildPassesSingleFileGrammarToPlugin(t *testing.T) {
 	hello := g.TokenModes[0].Members[0].(*ast.KeywordUsage)
 	require.Same(t, inner, hello.Command.Mode)
 	require.Nil(t, artifacts.TokenDeclaration(hello.Keyword.TokenType))
+}
+
+// The types span all files: an interface in one file is returned by rules
+// in others, implicitly by name and explicitly via returns, and extends an
+// interface of a third file.
+func TestBuildPassesTypesToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	ctx := &BuildContext{
+		Input: writeGrammarDir(t,
+			"a.fb", "grammar Multi\ninterface Named { Name string }\n"+multiTokens,
+			"b.fb", "grammar Multi\ninterface Greeting extends Named { To *Named }\n",
+			"c.fb", "grammar Multi\nentry Greeting: \"hello\" Name=ID (\"to\" To=[Named:ID])?\nOther returns Greeting: \"hi\" Name=ID\n",
+		),
+		Output:    t.TempDir(),
+		Package:   "multi",
+		Languages: []Language{{Entry: "Greeting", LanguageID: "greeting"}},
+		Plugins:   []pluginapi.Plugin{plugin},
+	}
+	require.NoError(t, ctx.Build())
+
+	artifacts := plugin.artifacts[0]
+	require.Len(t, artifacts.Types, len(artifacts.Grammar.Interfaces))
+	for i, typ := range artifacts.Types {
+		require.Same(t, artifacts.Grammar.Interfaces[i], typ.Declaration)
+	}
+	// Same order as the generated interfaces.
+	code, err := os.ReadFile(filepath.Join(ctx.Output, "types_gen.go"))
+	require.NoError(t, err)
+	declared := regexp.MustCompile(`(?m)^type (\w+) interface \{`).FindAllStringSubmatch(string(code), -1)
+	require.Len(t, declared, len(artifacts.Types))
+	for i, typ := range artifacts.Types {
+		require.Equal(t, declared[i][1], typ.Name)
+	}
+
+	var greeting, named *types.Type
+	for _, typ := range artifacts.Types {
+		switch typ.Name {
+		case "Greeting":
+			greeting = typ
+		case "Named":
+			named = typ
+		}
+	}
+	require.NotNil(t, greeting)
+	require.NotNil(t, named)
+	require.Equal(t, []*types.Type{named}, greeting.Extends)
+	require.Equal(t, []*types.Type{greeting}, named.Subtypes)
+	require.Equal(t, []*types.Field{named.OwnFields[0], greeting.OwnFields[0]}, greeting.AllFields)
+	require.Same(t, named, greeting.OwnFields[0].Type.Target)
+	require.Equal(t, artifacts.Sources[1], greeting.Declaration.Location().Source)
+
+	require.Len(t, greeting.ReturnedBy, 2)
+	returnedBy := map[string]*ast.ParserRule{}
+	for _, r := range greeting.ReturnedBy {
+		returnedBy[r.Name] = r
+		require.Same(t, artifacts.Sources[2], r.Location().Source)
+	}
+	require.Same(t, artifacts.Languages[0].EntryRule, returnedBy["Greeting"])
+	require.Same(t, greeting.Declaration, returnedBy["Other"].ReturnType)
+	require.Empty(t, named.ReturnedBy)
 }

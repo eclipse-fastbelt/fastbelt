@@ -44,7 +44,7 @@ func generateFunctions(grammar grammar.Grammar, node codegen.Node) codegen.Node 
 }
 
 func generateJSONMarshalTo(node codegen.Node, iface grammar.Interface) {
-	fields := collectAllFields(iface, map[string]struct{}{})
+	fields := collectAllFields(iface)
 	thisRef := "_this"
 	thisDot := thisRef + "."
 
@@ -159,7 +159,7 @@ func getAuxFieldType(field FieldInfo) string {
 }
 
 func generateJSONUnmarshalFrom(node codegen.Node, iface grammar.Interface) {
-	fields := collectAllFields(iface, map[string]struct{}{})
+	fields := collectAllFields(iface)
 
 	node.AppendLine("func (_this *", iface.Name(), "Impl) UnmarshalJSONFrom(_decoder *jsontext.Decoder) error {")
 	thisRef := "_this"

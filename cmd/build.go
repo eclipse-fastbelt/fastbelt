@@ -202,6 +202,10 @@ func buildArtifacts(inputDir string, languages []Language, loaded *loadedGrammar
 	if err != nil {
 		return pluginapi.BuildArtifacts{}, err
 	}
+	declaredTypes, err := artifacts.Types(gen.grammar, root)
+	if err != nil {
+		return pluginapi.BuildArtifacts{}, err
+	}
 	entryRules, err := artifacts.EntryRules(gen.grammar, root, gen.entries)
 	if err != nil {
 		return pluginapi.BuildArtifacts{}, err
@@ -220,6 +224,7 @@ func buildArtifacts(inputDir string, languages []Language, loaded *loadedGrammar
 		TokenModes: tokenModes,
 		Sources:    loaded.sources,
 		Grammar:    root,
+		Types:      declaredTypes,
 	}
 	astinit.SetTokenDeclarations(&result, tokenDecls)
 	return result, nil

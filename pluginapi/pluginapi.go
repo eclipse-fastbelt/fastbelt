@@ -8,6 +8,7 @@ import (
 	"typefox.dev/fastbelt/internal/artifacts/astinit"
 	"typefox.dev/fastbelt/pluginapi/ast"
 	"typefox.dev/fastbelt/pluginapi/tokens"
+	"typefox.dev/fastbelt/pluginapi/types"
 )
 
 // Plugin produces additional output from the artifacts of a Fastbelt build.
@@ -46,6 +47,10 @@ type BuildArtifacts struct {
 	// Grammar is the AST of the merged grammar of all Sources, after infix
 	// expansion. See the [ast] package documentation.
 	Grammar *ast.Grammar
+	// Types are the types of the interfaces declared in Grammar, in
+	// declaration order (Types[i].Declaration == Grammar.Interfaces[i]),
+	// which is also the order of the generated Go interfaces.
+	Types []*types.Type
 
 	// tokenDeclarations backs TokenDeclaration. It is set by the build
 	// through internal/artifacts/astinit.

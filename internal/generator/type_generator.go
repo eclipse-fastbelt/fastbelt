@@ -131,7 +131,10 @@ func isReferenceType(fieldType grammar.FieldType) (bool, string) {
 	}
 }
 
-func getAllExtends(grammr grammar.Grammar, iface grammar.Interface) []string {
+// AllExtends returns the names of all transitive super interfaces of iface,
+// depth-first in declared order and without duplicates. The generated Impl
+// structs embed the Data structs of the super interfaces in this order.
+func AllExtends(grammr grammar.Grammar, iface grammar.Interface) []string {
 	result := []string{}
 	return llExtends(grammr, iface, result)
 }
@@ -206,7 +209,7 @@ func generateImplStruct(node codegen.Node, grammr grammar.Grammar, iface grammar
 	node.AppendLine("type ", iface.Name(), "Impl struct {")
 	node.Indent(func(n codegen.Node) {
 		n.AppendLine("core.AstNodeBase")
-		for _, extends := range getAllExtends(grammr, iface) {
+		for _, extends := range AllExtends(grammr, iface) {
 			n.AppendLine(extends, "Data")
 		}
 		n.AppendLine(iface.Name(), "Data")
@@ -216,7 +219,7 @@ func generateImplStruct(node codegen.Node, grammr grammar.Grammar, iface grammar
 
 	node.AppendLine("func (i *", iface.Name(), "Impl) ForEachNode(fn func(core.AstNode, unique.Handle[string], int)) {")
 	node.Indent(func(n codegen.Node) {
-		for _, extends := range getAllExtends(grammr, iface) {
+		for _, extends := range AllExtends(grammr, iface) {
 			n.AppendLine("i.", extends, "Data.ForEachNode(fn)")
 		}
 		n.AppendLine("i.", iface.Name(), "Data.ForEachNode(fn)")
@@ -225,7 +228,7 @@ func generateImplStruct(node codegen.Node, grammr grammar.Grammar, iface grammar
 	node.AppendLine()
 	node.AppendLine("func (i *", iface.Name(), "Impl) ForEachReference(fn func(core.UntypedReference, unique.Handle[string], int)) {")
 	node.Indent(func(n codegen.Node) {
-		for _, extends := range getAllExtends(grammr, iface) {
+		for _, extends := range AllExtends(grammr, iface) {
 			n.AppendLine("i.", extends, "Data.ForEachReference(fn)")
 		}
 		n.AppendLine("i.", iface.Name(), "Data.ForEachReference(fn)")
@@ -414,7 +417,7 @@ func generateFieldHandles(grammr grammar.Grammar) codegen.Node {
 	node := codegen.NewNode()
 	set := collections.NewSet[string]()
 	for _, iface := range grammr.Interfaces() {
-		for _, f := range collectAllFields(iface, map[string]struct{}{}) {
+		for _, f := range collectAllFields(iface) {
 			set.Add(f.PName)
 		}
 	}
@@ -431,21 +434,34 @@ func generateFieldHandles(grammr grammar.Grammar) codegen.Node {
 	return node
 }
 
-func collectAllFields(iface grammar.Interface, visited map[string]struct{}) []FieldInfo {
-	if _, seen := visited[iface.Name()]; seen {
-		return nil
-	}
-	visited[iface.Name()] = struct{}{}
+// collectAllFields returns the field infos of [AllFields].
+func collectAllFields(iface grammar.Interface) []FieldInfo {
 	fields := []FieldInfo{}
-	for _, ext := range iface.Extends() {
-		if parent := ext.Ref(context.Background()); parent != nil {
-			fields = append(fields, collectAllFields(parent, visited)...)
-		}
-	}
-	for _, field := range iface.Fields() {
+	for _, field := range AllFields(iface) {
 		fields = append(fields, getFieldInfo(field))
 	}
 	return fields
+}
+
+// AllFields returns the fields of iface including the inherited ones: the
+// fields of the super interfaces first, depth-first in declared order, then
+// the own fields. Each interface contributes its fields once, also when it
+// is reached on several paths.
+func AllFields(iface grammar.Interface) []grammar.Field {
+	return appendAllFields(nil, iface, map[string]struct{}{})
+}
+
+func appendAllFields(fields []grammar.Field, iface grammar.Interface, visited map[string]struct{}) []grammar.Field {
+	if _, seen := visited[iface.Name()]; seen {
+		return fields
+	}
+	visited[iface.Name()] = struct{}{}
+	for _, ext := range iface.Extends() {
+		if parent := ext.Ref(context.Background()); parent != nil {
+			fields = appendAllFields(fields, parent, visited)
+		}
+	}
+	return append(fields, iface.Fields()...)
 }
 
 func fieldHandleVarName(pname string) string {
@@ -454,7 +470,7 @@ func fieldHandleVarName(pname string) string {
 }
 
 func generateResolve(node codegen.Node, iface grammar.Interface) {
-	allFields := collectAllFields(iface, map[string]struct{}{})
+	allFields := collectAllFields(iface)
 	sort.Slice(allFields, func(i, j int) bool { return allFields[i].Name < allFields[j].Name })
 
 	var containmentFields, primitiveFields, referenceFields []FieldInfo
