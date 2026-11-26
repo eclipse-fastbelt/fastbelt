@@ -7,6 +7,11 @@
 // languages are configured, wires them for dispatch inside a single language
 // server. The fastbelt CLI (cmd/fastbelt) is a thin wrapper over this package
 // for use cases that only need a single language.
+//
+// [BuildContext.Plugins] registers plugins that run after the generated files
+// have been written and produce additional output from the build artifacts.
+// Plugins are only available through this package, not through the CLI. See
+// [typefox.dev/fastbelt/pluginapi] for details.
 package cmd
 
 import (

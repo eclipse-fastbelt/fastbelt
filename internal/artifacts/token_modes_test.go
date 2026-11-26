@@ -45,8 +45,8 @@ func tokenModesOf(t *testing.T, text string, langs ...languageConfig) modesResul
 	entryModes := make([]string, len(langs))
 	for i, lang := range langs {
 		for _, rule := range g.Rules() {
-			if pr, ok := rule.(grammar.ParserRule); ok && pr.Name() == lang.entry {
-				entryRules[i] = pr
+			if rule.Name() == lang.entry {
+				entryRules[i] = rule
 			}
 		}
 		require.NotNil(t, entryRules[i], "entry rule %s", lang.entry)

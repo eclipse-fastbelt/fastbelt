@@ -33,12 +33,20 @@
 // [typefox.dev/fastbelt/pluginapi.BuildArtifacts.TokenDeclaration]; there is
 // no list of the usages of a token type.
 //
+// [Node.Container] returns the parent node, and nil for the [Grammar] root.
+// Together with the cross-references, this makes the AST a graph with
+// cycles; walk the child fields of a node, not its container, to traverse it.
+//
 // # Locations
 //
 // [Node.Location] is the byte range of the whole node in the .fb file it was
 // parsed from, also when several files were merged. The merged [Grammar] root
 // of a multi-file grammar has no single file and returns a zero Location; the
 // root of a single-file grammar covers the whole file.
+//
+// Offsets are bytes into [SourceFile.Text]. [SourceFile.LineColumn] converts
+// an offset into a 1-based line and a 1-based column counted in runes, as
+// usually shown to users.
 //
 // # Synthetic nodes
 //
