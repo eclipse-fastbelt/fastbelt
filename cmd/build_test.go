@@ -8,12 +8,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"typefox.dev/fastbelt/internal/grammar"
 	"typefox.dev/fastbelt/pluginapi"
+	"typefox.dev/fastbelt/pluginapi/tokens"
 )
 
 // writeGrammarDir writes the given (name, source) pairs into a fresh temp
@@ -477,4 +479,28 @@ func TestBuildPassesLanguagesToPlugin(t *testing.T) {
 
 	langs[0].Patterns[0] = "*.changed"
 	require.Equal(t, []string{"*.hello"}, ctx.Languages[0].Patterns)
+}
+
+func TestBuildPassesTokenTypesToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	ctx := &BuildContext{
+		Input:     filepath.Join("..", "examples", "arithmetics"),
+		Output:    t.TempDir(),
+		Package:   "arithmetics",
+		Languages: []Language{{Entry: "Module", LanguageID: "arithmetics"}},
+		Plugins:   []pluginapi.Plugin{plugin},
+	}
+	require.NoError(t, ctx.Build())
+
+	require.Len(t, plugin.artifacts, 1)
+	tts := plugin.artifacts[0].TokenTypes
+	require.NotEmpty(t, tts)
+	for i, tt := range tts {
+		require.Equal(t, i, tt.Index)
+	}
+	require.Equal(t, tokens.KindEOF, tts[0].Kind)
+	// Infix rules are expanded before the token types are converted.
+	i := slices.IndexFunc(tts, func(tt *tokens.TokenType) bool { return tt.Name == "BinaryExpressionOperator" })
+	require.NotEqual(t, -1, i)
+	require.True(t, tts[i].Synthetic)
 }

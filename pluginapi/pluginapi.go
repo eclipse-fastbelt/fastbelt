@@ -4,6 +4,8 @@
 
 package pluginapi
 
+import "typefox.dev/fastbelt/pluginapi/tokens"
+
 // Plugin produces additional output from the artifacts of a Fastbelt build.
 // See the package documentation for when and how plugins are called.
 type Plugin interface {
@@ -27,4 +29,7 @@ type BuildArtifacts struct {
 	// Languages are the languages configured for the build, in configured
 	// order. There is at least one.
 	Languages []*Language
+	// TokenTypes are the token types of the generated lexer, indexed by their
+	// runtime token index: TokenTypes[i].Index == i. Index 0 is EOF.
+	TokenTypes []*tokens.TokenType
 }

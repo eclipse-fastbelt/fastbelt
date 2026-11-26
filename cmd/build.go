@@ -169,12 +169,16 @@ func (c *BuildContext) Build() error {
 	if len(c.Plugins) == 0 {
 		return nil
 	}
-	return runPlugins(c.Plugins, buildArtifacts(fullInput, c.Languages, gen))
+	artifacts, err := buildArtifacts(fullInput, c.Languages, gen)
+	if err != nil {
+		return fmt.Errorf("building plugin artifacts: %w", err)
+	}
+	return runPlugins(c.Plugins, artifacts)
 }
 
 // buildArtifacts converts the configured languages and the result of the
 // generation into the artifacts handed to plugins.
-func buildArtifacts(inputDir string, languages []Language, gen *generation) pluginapi.BuildArtifacts {
+func buildArtifacts(inputDir string, languages []Language, gen *generation) (pluginapi.BuildArtifacts, error) {
 	configs := make([]artifacts.LanguageConfig, len(languages))
 	for i, lang := range languages {
 		configs[i] = artifacts.LanguageConfig{
@@ -183,12 +187,17 @@ func buildArtifacts(inputDir string, languages []Language, gen *generation) plug
 			Patterns:   lang.Patterns,
 		}
 	}
-	return pluginapi.BuildArtifacts{
-		InputDir:  inputDir,
-		OutputDir: gen.outDir,
-		Package:   gen.pkg,
-		Languages: artifacts.Languages(configs),
+	tokenTypes, err := artifacts.TokenTypes(gen.grammar, gen.tokenTypes)
+	if err != nil {
+		return pluginapi.BuildArtifacts{}, err
 	}
+	return pluginapi.BuildArtifacts{
+		InputDir:   inputDir,
+		OutputDir:  gen.outDir,
+		Package:    gen.pkg,
+		Languages:  artifacts.Languages(configs),
+		TokenTypes: tokenTypes,
+	}, nil
 }
 
 // isNilPlugin reports whether p is a nil interface or wraps a nil pointer,
