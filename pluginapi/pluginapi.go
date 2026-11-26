@@ -24,4 +24,7 @@ type BuildArtifacts struct {
 	OutputDir string
 	// Package is the Go package name of the generated code.
 	Package string
+	// Languages are the languages configured for the build, in configured
+	// order. There is at least one.
+	Languages []*Language
 }

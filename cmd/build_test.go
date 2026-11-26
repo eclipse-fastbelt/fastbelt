@@ -449,3 +449,32 @@ func TestBuildWithoutPlugins(t *testing.T) {
 	require.FileExists(t, filepath.Join(ctx.Output, "lexer_gen.go"))
 	require.FileExists(t, filepath.Join(ctx.Output, "parser_gen.go"))
 }
+
+func TestBuildPassesLanguagesToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	// The configuration of internal/languages/multilang/gen/main.go.
+	ctx := &BuildContext{
+		Input:   filepath.Join("..", "internal", "languages", "multilang"),
+		Output:  t.TempDir(),
+		Package: "multilang",
+		Languages: []Language{
+			{Entry: "Greeting", TokenMode: "GreetingMode", LanguageID: "greeting", Patterns: []string{"*.hello"}},
+			{Entry: "Farewell", TokenMode: "FarewellMode", LanguageID: "farewell", Patterns: []string{"*.bye"}},
+		},
+		Plugins: []pluginapi.Plugin{plugin},
+	}
+	require.NoError(t, ctx.Build())
+
+	require.Len(t, plugin.artifacts, 1)
+	langs := plugin.artifacts[0].Languages
+	require.Len(t, langs, 2)
+	require.Equal(t, "greeting", langs[0].LanguageID)
+	require.Equal(t, "Greeting", langs[0].Entry)
+	require.Equal(t, []string{"*.hello"}, langs[0].Patterns)
+	require.Equal(t, "farewell", langs[1].LanguageID)
+	require.Equal(t, "Farewell", langs[1].Entry)
+	require.Equal(t, []string{"*.bye"}, langs[1].Patterns)
+
+	langs[0].Patterns[0] = "*.changed"
+	require.Equal(t, []string{"*.hello"}, ctx.Languages[0].Patterns)
+}

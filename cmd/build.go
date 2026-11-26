@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	core "typefox.dev/fastbelt"
+	"typefox.dev/fastbelt/internal/artifacts"
 	"typefox.dev/fastbelt/internal/generator"
 	"typefox.dev/fastbelt/internal/grammar"
 	"typefox.dev/fastbelt/pluginapi"
@@ -168,16 +169,25 @@ func (c *BuildContext) Build() error {
 	if len(c.Plugins) == 0 {
 		return nil
 	}
-	return runPlugins(c.Plugins, buildArtifacts(fullInput, gen))
+	return runPlugins(c.Plugins, buildArtifacts(fullInput, c.Languages, gen))
 }
 
-// buildArtifacts converts the result of the generation into the artifacts
-// handed to plugins.
-func buildArtifacts(inputDir string, gen *generation) pluginapi.BuildArtifacts {
+// buildArtifacts converts the configured languages and the result of the
+// generation into the artifacts handed to plugins.
+func buildArtifacts(inputDir string, languages []Language, gen *generation) pluginapi.BuildArtifacts {
+	configs := make([]artifacts.LanguageConfig, len(languages))
+	for i, lang := range languages {
+		configs[i] = artifacts.LanguageConfig{
+			LanguageID: lang.LanguageID,
+			Entry:      lang.Entry,
+			Patterns:   lang.Patterns,
+		}
+	}
 	return pluginapi.BuildArtifacts{
 		InputDir:  inputDir,
 		OutputDir: gen.outDir,
 		Package:   gen.pkg,
+		Languages: artifacts.Languages(configs),
 	}
 }
 

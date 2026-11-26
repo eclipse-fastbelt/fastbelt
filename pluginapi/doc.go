@@ -51,7 +51,7 @@
 //	      ▲
 //	pluginapi/types    the type structure derived from the grammar
 //	      ▲
-//	pluginapi          Plugin, BuildArtifacts (imports all of the above)
+//	pluginapi          Plugin, BuildArtifacts, Language (imports all of the above)
 //
 // Links between artifacts only point down this stack. Reverse lookups (for
 // example, from a token type to its declaration in the AST) are provided as
