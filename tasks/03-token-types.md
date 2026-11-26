@@ -27,11 +27,12 @@ Read `TASK.md` (section "Summary") first.
        Keyword  string       // Kind == Keyword: the keyword value (unquoted)
        Regexp   string       // Kind == Regexp: regexp source without the surrounding slashes
        Members  []*TokenType // Kind == Group: direct members
-       Modifier string       // declared modifier: "", "hidden", "comment"
+       Modifier Modifier     // declared modifier: ModifierNone (""), ModifierHidden, ModifierComment
        Synthetic bool        // created by infix expansion
    }
    ```
    No compiled automata / rune sets.
+   `type Modifier string` lives in `tokens` and is shared with `pluginapi/ast` (Summary).
 2. `BuildArtifacts.TokenTypes []*tokens.TokenType` with `TokenTypes[i].Index == i`.
 3. Export from `internal/generator` only what `internal/artifacts` needs (prefer small accessor functions
    over exporting the internal lookup structs wholesale).

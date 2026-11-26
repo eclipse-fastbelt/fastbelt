@@ -31,7 +31,8 @@ Plugins can be registered on `cmd.BuildContext` and are called after code genera
      `BuildArtifacts`), plugins are Go-API only (no CLI support).
 2. Create `plugins/doc.go` (package `plugins`): home of homegrown Fastbelt plugins; currently empty.
 3. Create `internal/artifacts` (package doc only for now): converts internal generator data to `pluginapi` types.
-   `pluginapi` must never import `internal/...`.
+   `pluginapi` must never import internal generator code (the only exception, `internal/artifacts/astinit`,
+   follows in step 5).
 4. Add `Plugins []pluginapi.Plugin` to `cmd.BuildContext`.
 5. Refactor `cmd.Generate` (or split out an internal helper) so `Build()` gets access to the intermediate data
    (expanded grammar, `tokenTypes`, lexer modes, entry rules) needed later for the artifacts. Keep the CLI

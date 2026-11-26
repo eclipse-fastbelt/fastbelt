@@ -28,12 +28,12 @@ connected to token types via `*tokens.TokenType`, and each language knows its en
 
    type TokenModeMember struct {
        TokenType *TokenType
-       Modifier  string        // effective in this mode: "", "hidden", "comment"
+       Modifier  Modifier      // effective in this mode (shared type, step 3)
        Command   *TokenCommand // nil = no mode change
    }
 
    type TokenCommand struct {
-       Kind   string     // "push" | "pop" | "mode"
+       Kind   CommandKind // CommandPush | CommandPop | CommandMode ("push"/"pop"/"mode"); shared with ast
        Target *TokenMode // nil for "pop"
    }
    ```
