@@ -60,9 +60,13 @@ type KeywordTokenContent struct {
 	Keyword *Keyword
 }
 
-// Keyword is a keyword literal such as "a".
+// Keyword is a keyword literal such as "a", in a rule body or a token
+// declaration.
 type Keyword struct {
 	node
+	// Cardinality is the cardinality of the keyword in a rule body. It is
+	// [CardinalityOne] outside of rule bodies.
+	Cardinality Cardinality
 	// Value is the keyword without quotes, like [tokens.TokenType.Keyword].
 	Value string
 	// TokenType is the token type matching the keyword. Keywords with the

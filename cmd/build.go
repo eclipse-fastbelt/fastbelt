@@ -202,9 +202,14 @@ func buildArtifacts(inputDir string, languages []Language, loaded *loadedGrammar
 	if err != nil {
 		return pluginapi.BuildArtifacts{}, err
 	}
+	entryRules, err := artifacts.EntryRules(gen.grammar, root, gen.entries)
+	if err != nil {
+		return pluginapi.BuildArtifacts{}, err
+	}
 	langs := artifacts.Languages(configs)
 	for i, lang := range langs {
 		lang.EntryMode = entryModes[i]
+		lang.EntryRule = entryRules[i]
 	}
 	result := pluginapi.BuildArtifacts{
 		InputDir:   inputDir,

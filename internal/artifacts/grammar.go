@@ -87,7 +87,15 @@ type grammarConverter struct {
 }
 
 // init registers n as the mirror of src and sets its container and location.
+// It fails if src was created by infix expansion but n has no Synthetic flag.
 func (c *grammarConverter) init(n ast.Node, src core.AstNode, container ast.Node) {
+	if c.synthetic(src) {
+		switch n.(type) {
+		case *ast.TokenGroup, *ast.Keyword, *ast.Group, *ast.RuleCall:
+		default:
+			c.fail(fmt.Errorf("%T created by infix expansion cannot be flagged as synthetic", n))
+		}
+	}
 	c.nodes[src] = n
 	astinit.SetContainer(n, container)
 	astinit.SetLocation(n, c.location(src))
@@ -190,6 +198,8 @@ func (c *grammarConverter) grammar(g grammar.Grammar) *ast.Grammar {
 	n := &ast.Grammar{Name: g.Name()}
 	c.init(n, g, nil)
 	n.Rules = convertAll(g.Rules(), func(r grammar.ParserRule) *ast.ParserRule { return c.parserRule(r, n) })
+	n.Composites = convertAll(g.Composites(), func(r grammar.CompositeRule) *ast.CompositeRule { return c.compositeRule(r, n) })
+	n.InfixRules = convertAll(g.InfixRules(), func(r grammar.InfixRule) *ast.InfixRule { return c.infixRule(r, n) })
 	n.Terminals = convertAll(g.Terminals(), func(d grammar.TokenDecl) *ast.TokenDecl { return c.tokenDecl(d, n) })
 	n.TokenGroups = convertAll(g.TokenGroups(), func(tg grammar.TokenGroup) *ast.TokenGroup { return c.tokenGroup(tg, n) })
 	n.TokenModes = convertAll(g.TokenModes(), func(m grammar.TokenMode) *ast.TokenMode { return c.tokenMode(m, n) })
@@ -245,6 +255,108 @@ func (c *grammarConverter) parserRule(r grammar.ParserRule, container ast.Node) 
 	n := &ast.ParserRule{Name: r.Name(), Entry: r.IsEntry()}
 	c.init(n, r, container)
 	link(c, r.ReturnType(), func(t *ast.Interface) { n.ReturnType = t })
+	n.Body = c.element(r.Body(), n)
+	return n
+}
+
+func (c *grammarConverter) compositeRule(r grammar.CompositeRule, container ast.Node) *ast.CompositeRule {
+	n := &ast.CompositeRule{Name: r.Name()}
+	c.init(n, r, container)
+	n.Body = c.element(r.Body(), n)
+	return n
+}
+
+func (c *grammarConverter) infixRule(r grammar.InfixRule, container ast.Node) *ast.InfixRule {
+	n := &ast.InfixRule{Name: r.Name()}
+	c.init(n, r, container)
+	link(c, r.ReturnType(), func(t *ast.Interface) { n.ReturnType = t })
+	n.Call = c.ruleCall(r.Call(), n)
+	n.Groups = convertAll(r.Groups(), func(pg grammar.PrecedenceGroup) *ast.PrecedenceGroup {
+		group := &ast.PrecedenceGroup{Associativity: ast.Associativity(pg.Associativity())}
+		c.init(group, pg, n)
+		group.Operators = convertAll(pg.Operators(), func(op grammar.Assignable) ast.Assignable { return c.assignable(op, group) })
+		return group
+	})
+	// The body was synthesized by grammar.ExpandInfixRules.
+	n.Body = c.element(r.Body(), n)
+	return n
+}
+
+// element converts a rule body element; nil stays nil.
+func (c *grammarConverter) element(e grammar.Element, container ast.Node) ast.Element {
+	switch e := e.(type) {
+	case grammar.Assignable:
+		return c.assignable(e, container)
+	case grammar.Group:
+		n := &ast.Group{Cardinality: ast.Cardinality(e.Cardinality()), Synthetic: c.synthetic(e)}
+		c.init(n, e, container)
+		n.Elements = convertAll(e.Elements(), func(child grammar.Element) ast.Element { return c.element(child, n) })
+		return n
+	case grammar.Assignment:
+		n := &ast.Assignment{Cardinality: ast.Cardinality(e.Cardinality()), Operator: ast.AssignmentOperator(e.Operator())}
+		c.init(n, e, container)
+		link(c, e.Property(), func(f *ast.Field) { n.Property = f })
+		n.Value = c.assignable(e.Value(), n)
+		return n
+	case grammar.Action:
+		n := &ast.Action{Cardinality: ast.Cardinality(e.Cardinality()), Operator: ast.ActionOperator(e.Operator())}
+		c.init(n, e, container)
+		link(c, e.Type(), func(t *ast.Interface) { n.Type = t })
+		link(c, e.Property(), func(f *ast.Field) { n.Property = f })
+		return n
+	case nil:
+		return nil
+	default:
+		c.fail(fmt.Errorf("unknown element %T", e))
+		return nil
+	}
+}
+
+// assignable converts an element that may be an assignment value; nil stays
+// nil.
+func (c *grammarConverter) assignable(a grammar.Assignable, container ast.Node) ast.Assignable {
+	switch a := a.(type) {
+	case grammar.Keyword:
+		return c.keyword(a, container)
+	case grammar.RuleCall:
+		return c.ruleCall(a, container)
+	case grammar.CrossRef:
+		n := &ast.CrossRef{Cardinality: ast.Cardinality(a.Cardinality())}
+		c.init(n, a, container)
+		link(c, a.Type(), func(t *ast.Interface) { n.Type = t })
+		n.Rule = c.ruleCall(a.Rule(), n)
+		return n
+	case grammar.Alternatives:
+		n := &ast.Alternatives{Cardinality: ast.Cardinality(a.Cardinality())}
+		c.init(n, a, container)
+		n.Alts = convertAll(a.Alts(), func(alt grammar.Element) ast.Element { return c.element(alt, n) })
+		return n
+	case nil:
+		return nil
+	default:
+		c.fail(fmt.Errorf("unknown assignable %T", a))
+		return nil
+	}
+}
+
+// ruleCall converts a rule call; nil stays nil. A call to a token
+// declaration or group takes over the token type of its target, which the
+// first pass has set before the call is linked.
+func (c *grammarConverter) ruleCall(rc grammar.RuleCall, container ast.Node) *ast.RuleCall {
+	if rc == nil {
+		return nil
+	}
+	n := &ast.RuleCall{Cardinality: ast.Cardinality(rc.Cardinality()), Synthetic: c.synthetic(rc)}
+	c.init(n, rc, container)
+	link(c, rc.Rule(), func(r ast.AbstractRule) {
+		n.Rule = r
+		switch r := r.(type) {
+		case *ast.TokenDecl:
+			n.TokenType = r.TokenType
+		case *ast.TokenGroup:
+			n.TokenType = r.TokenType
+		}
+	})
 	return n
 }
 
@@ -271,7 +383,7 @@ func (c *grammarConverter) tokenDecl(d grammar.TokenDecl, container ast.Node) *a
 }
 
 func (c *grammarConverter) keyword(k grammar.Keyword, container ast.Node) *ast.Keyword {
-	n := &ast.Keyword{Value: grammar.KeywordValue(k), Synthetic: c.synthetic(k)}
+	n := &ast.Keyword{Value: grammar.KeywordValue(k), Cardinality: ast.Cardinality(k.Cardinality()), Synthetic: c.synthetic(k)}
 	c.init(n, k, container)
 	index, ok := c.result.KeywordTokenIndex(k)
 	n.TokenType = c.tokenType(index, ok, "keyword "+k.Value())

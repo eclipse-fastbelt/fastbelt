@@ -45,28 +45,18 @@ var astMirrorTypes = typesByName(
 	reflect.TypeFor[ast.KeywordUsage](),
 	reflect.TypeFor[ast.KeywordSelector](),
 	reflect.TypeFor[ast.Element](),
+	reflect.TypeFor[ast.Alternatives](),
+	reflect.TypeFor[ast.Group](),
 	reflect.TypeFor[ast.Keyword](),
+	reflect.TypeFor[ast.Assignment](),
+	reflect.TypeFor[ast.Assignable](),
+	reflect.TypeFor[ast.CrossRef](),
+	reflect.TypeFor[ast.RuleCall](),
+	reflect.TypeFor[ast.Action](),
+	reflect.TypeFor[ast.CompositeRule](),
+	reflect.TypeFor[ast.InfixRule](),
+	reflect.TypeFor[ast.PrecedenceGroup](),
 )
-
-// pendingStep7 lists the grammar interfaces ("Type") and fields
-// ("Type.Field") that are mirrored in step 7. Their checks are skipped.
-// TODO(step 7): this list must be empty.
-var pendingStep7 = map[string]bool{
-	"Element":             true,
-	"Alternatives":        true,
-	"Group":               true,
-	"Assignment":          true,
-	"Assignable":          true,
-	"CrossRef":            true,
-	"RuleCall":            true,
-	"Action":              true,
-	"CompositeRule":       true,
-	"InfixRule":           true,
-	"PrecedenceGroup":     true,
-	"Keyword.Cardinality": true,
-	"Grammar.Composites":  true,
-	"Grammar.InfixRules":  true,
-}
 
 func typesByName(types ...reflect.Type) map[string]reflect.Type {
 	byName := make(map[string]reflect.Type, len(types))
@@ -127,9 +117,6 @@ func TestASTMirrorIsComplete(t *testing.T) {
 	nodeType := reflect.TypeFor[ast.Node]()
 
 	for name, iface := range ifaces {
-		if pendingStep7[name] {
-			continue
-		}
 		goType, ok := astMirrorTypes[name]
 		require.True(t, ok, "grammar interface %s has no counterpart in pluginapi/ast", name)
 
@@ -137,7 +124,7 @@ func TestASTMirrorIsComplete(t *testing.T) {
 			require.Equal(t, reflect.Interface, goType.Kind(), "%s is extended and must be a Go interface", name)
 			require.True(t, goType.Implements(nodeType), "%s must embed ast.Node", name)
 			for subName, sub := range ifaces {
-				if pendingStep7[subName] || extended[sub] || !isSubtype(t, sub, iface) {
+				if extended[sub] || !isSubtype(t, sub, iface) {
 					continue
 				}
 				subType := astMirrorTypes[subName]
@@ -151,9 +138,6 @@ func TestASTMirrorIsComplete(t *testing.T) {
 		require.True(t, reflect.PointerTo(goType).Implements(nodeType), "*%s must implement ast.Node", name)
 		for _, field := range allFields(t, iface) {
 			key := name + "." + field.Name()
-			if pendingStep7[key] {
-				continue
-			}
 			goField, ok := goType.FieldByName(field.Name())
 			require.True(t, ok, "%s has no field %s", name, field.Name())
 			require.True(t, goField.IsExported(), "%s must be exported", key)
@@ -188,9 +172,6 @@ func requireFieldKind(t *testing.T, key string, fieldType grammar.FieldType, goT
 
 func requireNodeKind(t *testing.T, key, target string, goType reflect.Type) {
 	t.Helper()
-	if pendingStep7[target] {
-		return
-	}
 	want, ok := astMirrorTypes[target]
 	require.True(t, ok, "%s: target %s has no counterpart in pluginapi/ast", key, target)
 	if want.Kind() == reflect.Interface {

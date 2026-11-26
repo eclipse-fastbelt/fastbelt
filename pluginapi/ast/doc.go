@@ -21,15 +21,17 @@
 // keywords are unquoted ([Keyword.Value]), regexps have no surrounding
 // slashes ([RegexpTokenContent.Regexp]), flags such as [ParserRule.Entry]
 // are bools, and fixed choices are typed constants such as [Primitive],
+// [Cardinality], [AssignmentOperator], [ActionOperator], [Associativity],
 // [tokens.Modifier] and [tokens.CommandKind]. Cross-references point
 // directly to the target node; an absent optional reference or child is
 // nil. The source tokens themselves are not part of the mirror.
 //
-// [TokenDecl], [TokenGroup] and [Keyword] link to the token type they
-// produce or match. For the reverse direction, see
-// [typefox.dev/fastbelt/pluginapi.BuildArtifacts.TokenDeclaration].
-//
-// Rule bodies are not mirrored yet: Body fields are nil.
+// [TokenDecl], [TokenGroup], [Keyword] and [RuleCall] (to a token
+// declaration or group) link to the token type they produce or consume; a
+// [CrossRef] consumes the token of its [CrossRef.Rule]. For the reverse
+// direction, see
+// [typefox.dev/fastbelt/pluginapi.BuildArtifacts.TokenDeclaration]; there is
+// no list of the usages of a token type.
 //
 // # Locations
 //
@@ -41,8 +43,10 @@
 // # Synthetic nodes
 //
 // Infix expansion adds an operator token group per infix rule to
-// [Grammar.TokenGroups]. These nodes have Synthetic set ([TokenGroup.Synthetic],
-// [Keyword.Synthetic]) and are located at the infix rule (the group) or the
-// operator they were copied from (its keywords), in the file of the infix
-// rule.
+// [Grammar.TokenGroups] and sets the [InfixRule.Body]. These nodes have
+// Synthetic set ([TokenGroup.Synthetic], [Keyword.Synthetic],
+// [Group.Synthetic], [RuleCall.Synthetic]) and are located in the file of
+// the infix rule: at the operator they were copied from (the keywords of the
+// group), at the operand call (the operand calls of the body), or at the
+// infix rule itself (all others).
 package ast

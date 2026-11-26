@@ -20,6 +20,7 @@ import (
 
 // converted holds the converted AST of a grammar and the data it links to.
 type converted struct {
+	g      grammar.Grammar
 	root   *ast.Grammar
 	decls  map[*tokens.TokenType]ast.TokenDeclaration
 	tts    []*tokens.TokenType
@@ -42,7 +43,7 @@ func grammarOf(t *testing.T, text string) converted {
 	require.NoError(t, err)
 	root, decls, err := Grammar(g, nodeSources, result, tts)
 	require.NoError(t, err)
-	return converted{root: root, decls: decls, tts: tts, source: source}
+	return converted{g: g, root: root, decls: decls, tts: tts, source: source}
 }
 
 func grammarOfFile(t *testing.T, path string) converted {
@@ -171,7 +172,7 @@ func TestGrammarParserRules(t *testing.T) {
 	require.False(t, item.Entry)
 	require.Same(t, iface(t, g, "Model"), model.ReturnType)
 	require.Nil(t, item.ReturnType)
-	require.Nil(t, model.Body, "rule bodies follow in step 7")
+	require.NotNil(t, model.Body)
 	requireLocated(t, c.source, `Item: "item" Name=ID;`, g, item)
 }
 
@@ -365,6 +366,11 @@ func TestGrammarUnresolvedReferenceIsAnError(t *testing.T) {
 	result := generator.GenerateTokenTypes(g)
 	tts, err := TokenTypes(g, result)
 	require.NoError(t, err)
-	_, _, err = Grammar(g, map[core.AstNode]*ast.SourceFile{}, result, tts)
+	source := ast.NewSourceFile("/test.fb", "")
+	nodeSources := map[core.AstNode]*ast.SourceFile{}
+	for node := range core.AllNodes(g) {
+		nodeSources[node] = source
+	}
+	_, _, err = Grammar(g, nodeSources, result, tts)
 	require.ErrorContains(t, err, "Missing")
 }

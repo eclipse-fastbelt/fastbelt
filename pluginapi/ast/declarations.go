@@ -15,6 +15,10 @@ type Grammar struct {
 	Name string
 	// Rules are the parser rules.
 	Rules []*ParserRule
+	// Composites are the composite rules.
+	Composites []*CompositeRule
+	// InfixRules are the infix rules.
+	InfixRules []*InfixRule
 	// Terminals are the top-level token declarations. Token declarations
 	// inside token modes are members of the modes, see [TokenDeclUsage].
 	Terminals []*TokenDecl
@@ -92,32 +96,25 @@ func (*ReferenceType) isFieldType() {}
 func (*SimpleType) isFieldType()    {}
 func (*PrimitiveType) isFieldType() {}
 
-// AbstractRule is any named rule: *[ParserRule], *[TokenDecl] or
-// *[TokenGroup]. Composite and infix rules follow with the rule bodies.
+// AbstractRule is any named rule: *[ParserRule], *[CompositeRule],
+// *[InfixRule], *[TokenDecl] or *[TokenGroup].
 type AbstractRule interface {
 	Node
 	isAbstractRule()
 }
 
-// AbstractRuleWithBody is a rule with a body: *[ParserRule].
+// AbstractRuleWithBody is a rule with a body: *[ParserRule],
+// *[CompositeRule] or *[InfixRule].
 type AbstractRuleWithBody interface {
 	AbstractRule
 	isAbstractRuleWithBody()
 }
 
 // AbstractRuleWithReturnType is a rule with an optional return type:
-// *[ParserRule].
+// *[ParserRule] or *[InfixRule].
 type AbstractRuleWithReturnType interface {
 	AbstractRuleWithBody
 	isAbstractRuleWithReturnType()
-}
-
-// Element is an element of a rule body.
-//
-// Rule bodies are not mirrored yet; Body fields are nil.
-type Element interface {
-	Node
-	isElement()
 }
 
 // ParserRule is a parser rule: entry Name returns ReturnType: Body.
@@ -128,7 +125,7 @@ type ParserRule struct {
 	Entry bool
 	// ReturnType is the declared return type, or nil if there is none.
 	ReturnType *Interface
-	// Body is the rule body. It is not mirrored yet and always nil.
+	// Body is the rule body.
 	Body Element
 }
 

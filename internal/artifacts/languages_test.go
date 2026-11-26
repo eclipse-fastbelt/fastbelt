@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"typefox.dev/fastbelt/internal/grammar"
+	"typefox.dev/fastbelt/pluginapi/ast"
 )
 
 func TestLanguagesSingle(t *testing.T) {
@@ -60,4 +62,19 @@ func TestLanguagesEmptyPatternsAreNil(t *testing.T) {
 
 func TestLanguagesNone(t *testing.T) {
 	require.Empty(t, Languages(nil))
+}
+
+func TestEntryRules(t *testing.T) {
+	c := grammarOf(t, elementsGrammar)
+	byName := map[string]grammar.ParserRule{}
+	for _, r := range c.g.Rules() {
+		byName[r.Name()] = r
+	}
+	model, leaf := byName["Model"], byName["Leaf"]
+	rules, err := EntryRules(c.g, c.root, []grammar.ParserRule{leaf, model})
+	require.NoError(t, err)
+	require.Equal(t, []*ast.ParserRule{rule(t, c.root, "Leaf"), rule(t, c.root, "Model")}, rules)
+
+	_, err = EntryRules(c.g, c.root, []grammar.ParserRule{grammar.NewParserRule()})
+	require.ErrorContains(t, err, "is not a rule of the grammar")
 }

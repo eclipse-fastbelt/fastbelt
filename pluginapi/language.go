@@ -4,7 +4,10 @@
 
 package pluginapi
 
-import "typefox.dev/fastbelt/pluginapi/tokens"
+import (
+	"typefox.dev/fastbelt/pluginapi/ast"
+	"typefox.dev/fastbelt/pluginapi/tokens"
+)
 
 // Language is one of the languages configured for the build, see
 // [BuildArtifacts.Languages].
@@ -22,4 +25,7 @@ type Language struct {
 	// EntryMode is the token mode the lexer starts in for documents of this
 	// language. It is one of [BuildArtifacts.TokenModes].
 	EntryMode *tokens.TokenMode
+	// EntryRule is the parser rule named by Entry. It is one of
+	// [BuildArtifacts.Grammar]'s Rules.
+	EntryRule *ast.ParserRule
 }

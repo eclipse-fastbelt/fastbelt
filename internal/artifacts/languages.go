@@ -5,9 +5,12 @@
 package artifacts
 
 import (
+	"fmt"
 	"slices"
 
+	"typefox.dev/fastbelt/internal/grammar"
 	"typefox.dev/fastbelt/pluginapi"
+	"typefox.dev/fastbelt/pluginapi/ast"
 )
 
 // LanguageConfig holds the configured values of one language of the build. It
@@ -35,4 +38,20 @@ func Languages(configs []LanguageConfig) []*pluginapi.Language {
 		}
 	}
 	return langs
+}
+
+// EntryRules returns the mirrors of the entry parser rules of the languages,
+// index-aligned to entries. g and root are the grammar and its mirror, see
+// [Grammar]; every entry must be one of g.Rules().
+func EntryRules(g grammar.Grammar, root *ast.Grammar, entries []grammar.ParserRule) ([]*ast.ParserRule, error) {
+	rules := make([]*ast.ParserRule, len(entries))
+	for i, entry := range entries {
+		// root.Rules is converted from g.Rules() in order.
+		index := slices.Index(g.Rules(), entry)
+		if index < 0 || index >= len(root.Rules) {
+			return nil, fmt.Errorf("entry rule %s is not a rule of the grammar", entry.Name())
+		}
+		rules[i] = root.Rules[index]
+	}
+	return rules, nil
 }

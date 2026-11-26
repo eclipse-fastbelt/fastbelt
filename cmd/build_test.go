@@ -509,6 +509,84 @@ func TestBuildPassesTokenTypesToPlugin(t *testing.T) {
 	require.True(t, tts[i].Synthetic)
 }
 
+// TestBuildLinksElementsToGeneratedTokenIndices checks the token types of
+// keywords and token rule calls in rule bodies against the _Idx constants of
+// the generated lexer.
+func TestBuildLinksElementsToGeneratedTokenIndices(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	out := t.TempDir()
+	ctx := &BuildContext{
+		Input:     filepath.Join("..", "examples", "arithmetics"),
+		Output:    out,
+		Package:   "arithmetics",
+		Languages: []Language{{Entry: "Module", LanguageID: "arithmetics"}},
+		Plugins:   []pluginapi.Plugin{plugin},
+	}
+	require.NoError(t, ctx.Build())
+	code, err := os.ReadFile(filepath.Join(out, "lexer_gen.go"))
+	require.NoError(t, err)
+	constants := map[string]int{}
+	for _, m := range regexp.MustCompile(`(?m)^const (\w+_Idx) = (\d+)$`).FindAllStringSubmatch(string(code), -1) {
+		index, err := strconv.Atoi(m[2])
+		require.NoError(t, err)
+		constants[m[1]] = index
+	}
+	g := plugin.artifacts[0].Grammar
+
+	// Keywords, by the generated names of their values.
+	keywordConstants := map[string]string{"module": "Keyword_module_Idx", "(": "Keyword_LeftParen_Idx", "%": "Keyword_Percent_Idx", "^": "Keyword_Caret_Idx"}
+	seen := map[string]bool{}
+	var calls int
+	var visit func(e ast.Element)
+	visit = func(e ast.Element) {
+		switch e := e.(type) {
+		case *ast.Group:
+			for _, child := range e.Elements {
+				visit(child)
+			}
+		case *ast.Alternatives:
+			for _, child := range e.Alts {
+				visit(child)
+			}
+		case *ast.Assignment:
+			visit(e.Value)
+		case *ast.CrossRef:
+			visit(e.Rule)
+		case *ast.Keyword:
+			if name, ok := keywordConstants[e.Value]; ok {
+				require.Equal(t, constants[name], e.TokenType.Index, e.Value)
+				seen[e.Value] = true
+			}
+		case *ast.RuleCall:
+			var name string
+			switch r := e.Rule.(type) {
+			case *ast.TokenDecl:
+				name = "Token_" + r.Name + "_Idx"
+			case *ast.TokenGroup:
+				name = "TokenGroup_" + r.Name + "_Idx"
+			default:
+				require.Nil(t, e.TokenType)
+				return
+			}
+			require.Contains(t, constants, name)
+			require.Equal(t, constants[name], e.TokenType.Index, name)
+			calls++
+		}
+	}
+	for _, r := range g.Rules {
+		visit(r.Body)
+	}
+	infix := g.InfixRules[0]
+	visit(infix.Body)
+	for _, group := range infix.Groups {
+		for _, op := range group.Operators {
+			visit(op)
+		}
+	}
+	require.Len(t, seen, len(keywordConstants))
+	require.Greater(t, calls, 4, "ID, NUMBER, the operator group and the groups of the infix rule")
+}
+
 func TestBuildPassesTokenModesToPlugin(t *testing.T) {
 	plugin := &recordingPlugin{name: "rec"}
 	out := t.TempDir()
@@ -571,6 +649,35 @@ func TestBuildPassesSyntheticTokenModesToPlugin(t *testing.T) {
 		require.Equal(t, lang.Entry, lang.EntryMode.Name)
 		require.True(t, lang.EntryMode.Synthetic)
 	}
+}
+
+func TestBuildPassesEntryRulesToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	ctx := &BuildContext{
+		Input:   writeGrammarDir(t, "a.fb", splitGreetingGrammarA, "b.fb", "grammar Multi\nentry Farewell: \"goodbye\" Name=ID\n"),
+		Output:  t.TempDir(),
+		Package: "multi",
+		Languages: []Language{
+			{Entry: "Farewell", LanguageID: "farewell"},
+			{Entry: "Greeting", LanguageID: "greeting"},
+		},
+		Plugins: []pluginapi.Plugin{plugin},
+	}
+	require.NoError(t, ctx.Build())
+
+	artifacts := plugin.artifacts[0]
+	rules := map[string]*ast.ParserRule{}
+	for _, r := range artifacts.Grammar.Rules {
+		rules[r.Name] = r
+	}
+	require.Len(t, rules, 2)
+	for _, lang := range artifacts.Languages {
+		require.NotNil(t, lang.EntryRule, lang.LanguageID)
+		require.Same(t, rules[lang.Entry], lang.EntryRule, lang.LanguageID)
+	}
+	// The entry rules come from different files.
+	require.Same(t, artifacts.Sources[0], artifacts.Languages[1].EntryRule.Location().Source)
+	require.Same(t, artifacts.Sources[1], artifacts.Languages[0].EntryRule.Location().Source)
 }
 
 // requireModeConstants asserts that the generated lexer in dir declares a
@@ -771,6 +878,19 @@ func TestBuildPassesMultiFileGrammarToPlugin(t *testing.T) {
 	require.Same(t, b, operators.Location().Source)
 	require.Equal(t, `infix Bin on Num: "*" > Plus`, operators.Location().Text())
 	require.Equal(t, []ast.AbstractTokenRule{groups["Plus"]}, operators.TokenRefs)
+	// So is the synthetic body of the infix rule.
+	require.Len(t, g.InfixRules, 1)
+	infix := g.InfixRules[0]
+	body := infix.Body.(*ast.Group)
+	require.True(t, body.Synthetic)
+	require.Same(t, b, body.Location().Source)
+	require.Equal(t, infix.Location(), body.Location())
+	operator := body.Elements[1].(*ast.Group).Elements[0].(*ast.RuleCall)
+	require.True(t, operator.Synthetic)
+	require.Same(t, operators, operator.Rule)
+	require.Same(t, operators.TokenType, operator.TokenType)
+	require.Same(t, b, operator.Location().Source)
+	require.Same(t, rules["Model"], artifacts.Languages[0].EntryRule)
 	require.Len(t, operators.Keywords, 1)
 	require.True(t, operators.Keywords[0].Synthetic)
 	require.Same(t, b, operators.Keywords[0].Location().Source)
