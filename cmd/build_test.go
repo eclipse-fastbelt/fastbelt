@@ -5,6 +5,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"typefox.dev/fastbelt/internal/grammar"
+	"typefox.dev/fastbelt/pluginapi"
 )
 
 // writeGrammarDir writes the given (name, source) pairs into a fresh temp
@@ -315,4 +317,135 @@ func TestBuildMultiLanguageLexerKeepsInfixOperators(t *testing.T) {
 	require.Contains(t, calcMode, "Token_NUMBER")
 	require.NotContains(t, greetingMode, "Keyword_Plus")
 	require.NotContains(t, greetingMode, "Token_NUMBER")
+}
+
+// recordingPlugin records its calls into a shared log and fails with err, if set.
+type recordingPlugin struct {
+	name      string
+	err       error
+	log       *[]string
+	artifacts []pluginapi.BuildArtifacts
+	// genFiles lists the *_gen.go files present in the output dir during Build.
+	genFiles []string
+}
+
+func (p *recordingPlugin) Name() string { return p.name }
+
+func (p *recordingPlugin) Build(artifacts pluginapi.BuildArtifacts) error {
+	if p.log != nil {
+		*p.log = append(*p.log, p.name)
+	}
+	p.artifacts = append(p.artifacts, artifacts)
+	files, err := filepath.Glob(filepath.Join(artifacts.OutputDir, "*_gen.go"))
+	if err != nil {
+		return err
+	}
+	p.genFiles = files
+	return p.err
+}
+
+func greetingBuildContext(t *testing.T, plugins ...pluginapi.Plugin) *BuildContext {
+	t.Helper()
+	return &BuildContext{
+		Input:   writeGrammarDir(t, "a.fb", modeGrammar),
+		Output:  t.TempDir(),
+		Package: "multi",
+		Languages: []Language{
+			{Entry: "Greeting", LanguageID: "greeting", Patterns: []string{"**/*.hello"}},
+		},
+		Plugins: plugins,
+	}
+}
+
+func TestBuildPassesArtifactsToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	ctx := greetingBuildContext(t, plugin)
+	require.NoError(t, ctx.Build())
+
+	require.Len(t, plugin.artifacts, 1)
+	artifacts := plugin.artifacts[0]
+	require.Equal(t, ctx.Input, artifacts.InputDir)
+	require.Equal(t, ctx.Output, artifacts.OutputDir)
+	require.True(t, filepath.IsAbs(artifacts.InputDir))
+	require.True(t, filepath.IsAbs(artifacts.OutputDir))
+	require.Equal(t, "multi", artifacts.Package)
+}
+
+func TestBuildResolvesRelativeDirsAndDefaultsForPlugins(t *testing.T) {
+	dir := writeGrammarDir(t, "a.fb", modeGrammar)
+	t.Chdir(filepath.Dir(dir))
+	plugin := &recordingPlugin{name: "rec"}
+	ctx := &BuildContext{Input: filepath.Base(dir), Languages: []Language{
+		{Entry: "Greeting", LanguageID: "greeting", Patterns: []string{"**/*.hello"}},
+	}, Plugins: []pluginapi.Plugin{plugin}}
+	require.NoError(t, ctx.Build())
+
+	require.Len(t, plugin.artifacts, 1)
+	artifacts := plugin.artifacts[0]
+	// Compare resolved paths, the temp dir may be behind a symlink (macOS).
+	resolved := func(p string) string {
+		r, err := filepath.EvalSymlinks(p)
+		require.NoError(t, err)
+		return r
+	}
+	require.True(t, filepath.IsAbs(artifacts.InputDir))
+	require.Equal(t, resolved(dir), resolved(artifacts.InputDir))
+	require.Equal(t, resolved(dir), resolved(artifacts.OutputDir))
+	require.Equal(t, filepath.Base(dir), artifacts.Package)
+}
+
+func TestBuildRunsPluginsAfterGeneratedFilesAreWritten(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	ctx := greetingBuildContext(t, plugin)
+	require.NoError(t, ctx.Build())
+
+	for _, name := range []string{"lexer_gen.go", "parser_gen.go", "types_gen.go", "services_gen.go", "atn_gen.go"} {
+		require.Contains(t, plugin.genFiles, filepath.Join(ctx.Output, name))
+	}
+}
+
+func TestBuildRunsPluginsInRegistrationOrder(t *testing.T) {
+	var log []string
+	ctx := greetingBuildContext(t,
+		&recordingPlugin{name: "first", log: &log},
+		&recordingPlugin{name: "second", log: &log},
+		&recordingPlugin{name: "third", log: &log},
+	)
+	require.NoError(t, ctx.Build())
+	require.Equal(t, []string{"first", "second", "third"}, log)
+}
+
+func TestBuildAbortsOnFailingPlugin(t *testing.T) {
+	var log []string
+	errBoom := errors.New("boom")
+	later := &recordingPlugin{name: "later", log: &log}
+	ctx := greetingBuildContext(t,
+		&recordingPlugin{name: "ok", log: &log},
+		&recordingPlugin{name: "failing", log: &log, err: errBoom},
+		later,
+	)
+	err := ctx.Build()
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoom)
+	require.ErrorContains(t, err, `plugin "failing"`)
+	require.Equal(t, []string{"ok", "failing"}, log)
+	require.Empty(t, later.artifacts)
+}
+
+func TestBuildRejectsNilPlugins(t *testing.T) {
+	var nilPointer *recordingPlugin
+	for name, plugin := range map[string]pluginapi.Plugin{"nil interface": nil, "nil pointer": nilPointer} {
+		t.Run(name, func(t *testing.T) {
+			ctx := greetingBuildContext(t, &recordingPlugin{name: "ok"}, plugin)
+			require.EqualError(t, ctx.Build(), "plugin 1 is nil")
+			require.NoFileExists(t, filepath.Join(ctx.Output, "lexer_gen.go"))
+		})
+	}
+}
+
+func TestBuildWithoutPlugins(t *testing.T) {
+	ctx := greetingBuildContext(t)
+	require.NoError(t, ctx.Build())
+	require.FileExists(t, filepath.Join(ctx.Output, "lexer_gen.go"))
+	require.FileExists(t, filepath.Join(ctx.Output, "parser_gen.go"))
 }
