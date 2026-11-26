@@ -684,3 +684,132 @@ func TestLoadGrammarDirRecordsNodeSourcesForSingleFile(t *testing.T) {
 		require.Same(t, loaded.sources[0], loaded.nodeSources[node])
 	}
 }
+
+// splitASTGrammarA and splitASTGrammarB form a grammar whose nodes reference
+// each other across files, with an infix rule in the second file.
+const (
+	splitASTGrammarA = `grammar Multi
+interface Model { Exprs []Expr }
+interface Expr {}
+entry Model: Exprs+=Expr*
+Num returns Expr: {Num} Value=NUM
+token NUM: /[0-9]+/
+hidden token WS: /\s+/
+`
+	splitASTGrammarB = `grammar Multi
+interface Num extends Expr { Value string }
+interface Bin extends Expr { Left Expr Operator string Right Expr }
+Expr returns Expr: Bin
+infix Bin on Num: "*" > Plus
+token group Plus { "+" NUM }
+`
+)
+
+func TestBuildPassesMultiFileGrammarToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	ctx := &BuildContext{
+		Input:     writeGrammarDir(t, "a.fb", splitASTGrammarA, "b.fb", splitASTGrammarB),
+		Output:    t.TempDir(),
+		Package:   "multi",
+		Languages: []Language{{Entry: "Model", LanguageID: "model"}},
+		Plugins:   []pluginapi.Plugin{plugin},
+	}
+	require.NoError(t, ctx.Build())
+	artifacts := plugin.artifacts[0]
+	g := artifacts.Grammar
+	require.NotNil(t, g)
+	a, b := artifacts.Sources[0], artifacts.Sources[1]
+
+	// The merged root has no source.
+	require.Equal(t, "Multi", g.Name)
+	require.Equal(t, ast.Location{}, g.Location())
+	require.Nil(t, g.Container())
+
+	ifaces := map[string]*ast.Interface{}
+	for _, i := range g.Interfaces {
+		ifaces[i.Name] = i
+		require.Same(t, g, i.Container())
+	}
+	// Interfaces in b.fb extend an interface in a.fb.
+	require.Equal(t, []*ast.Interface{ifaces["Expr"]}, ifaces["Num"].Extends)
+	require.Same(t, b, ifaces["Num"].Location().Source)
+	require.Equal(t, "interface Num extends Expr { Value string }", ifaces["Num"].Location().Text())
+	value := ifaces["Num"].Fields[0]
+	require.Same(t, b, value.Location().Source)
+	require.Equal(t, "Value string", value.Location().Text())
+	// A field type in a.fb refers to an interface in a.fb.
+	exprs := ifaces["Model"].Fields[0]
+	require.Same(t, a, exprs.Location().Source)
+	require.Same(t, ifaces["Expr"], exprs.Type.(*ast.ArrayType).InternalType.(*ast.SimpleType).Type)
+
+	rules := map[string]*ast.ParserRule{}
+	for _, r := range g.Rules {
+		rules[r.Name] = r
+	}
+	// A rule in a.fb returns an interface declared in b.fb and vice versa.
+	require.Same(t, ifaces["Expr"], rules["Num"].ReturnType)
+	require.Same(t, a, rules["Num"].Location().Source)
+	require.Same(t, ifaces["Expr"], rules["Expr"].ReturnType)
+	require.Same(t, b, rules["Expr"].Location().Source)
+	require.True(t, rules["Model"].Entry)
+
+	groups := map[string]*ast.TokenGroup{}
+	for _, group := range g.TokenGroups {
+		groups[group.Name] = group
+	}
+	num := g.Terminals[0]
+	require.Equal(t, "NUM", num.Name)
+	// A group in b.fb references a token in a.fb.
+	require.Equal(t, []ast.AbstractTokenRule{num}, groups["Plus"].TokenRefs)
+	require.Same(t, b, groups["Plus"].Location().Source)
+
+	// The synthetic operator group is located at its infix rule in b.fb,
+	// although it is attached to the merged root.
+	operators := groups["BinOperator"]
+	require.True(t, operators.Synthetic)
+	require.Same(t, g, operators.Container())
+	require.Same(t, b, operators.Location().Source)
+	require.Equal(t, `infix Bin on Num: "*" > Plus`, operators.Location().Text())
+	require.Equal(t, []ast.AbstractTokenRule{groups["Plus"]}, operators.TokenRefs)
+	require.Len(t, operators.Keywords, 1)
+	require.True(t, operators.Keywords[0].Synthetic)
+	require.Same(t, b, operators.Keywords[0].Location().Source)
+	require.Equal(t, `"*"`, operators.Keywords[0].Location().Text())
+
+	// Token declarations and token types agree.
+	for _, decl := range []ast.TokenDeclaration{num, g.Terminals[1], groups["Plus"], operators} {
+		var tt *tokens.TokenType
+		switch d := decl.(type) {
+		case *ast.TokenDecl:
+			tt = d.TokenType
+		case *ast.TokenGroup:
+			tt = d.TokenType
+		}
+		require.Same(t, tt, artifacts.TokenTypes[tt.Index])
+		require.Same(t, decl, artifacts.TokenDeclaration(tt))
+	}
+	require.Nil(t, artifacts.TokenDeclaration(artifacts.TokenTypes[0]), "EOF")
+	for _, tt := range artifacts.TokenTypes {
+		if tt.Kind == tokens.KindKeyword {
+			require.Nil(t, artifacts.TokenDeclaration(tt), "keyword %s", tt.Name)
+		}
+	}
+}
+
+func TestBuildPassesSingleFileGrammarToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	ctx := greetingBuildContext(t, plugin)
+	require.NoError(t, ctx.Build())
+	artifacts := plugin.artifacts[0]
+	g := artifacts.Grammar
+	require.Same(t, artifacts.Sources[0], g.Location().Source)
+	require.Equal(t, modeGrammar, g.Location().Text())
+
+	id := g.Terminals[0]
+	require.Equal(t, "ID", id.Name)
+	require.Same(t, id, artifacts.TokenDeclaration(id.TokenType))
+	inner := g.TokenModes[1]
+	hello := g.TokenModes[0].Members[0].(*ast.KeywordUsage)
+	require.Same(t, inner, hello.Command.Mode)
+	require.Nil(t, artifacts.TokenDeclaration(hello.Keyword.TokenType))
+}

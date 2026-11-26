@@ -11,14 +11,22 @@ import (
 	"typefox.dev/fastbelt/internal/artifacts/astinit"
 )
 
-type locatedNode struct{ location Location }
-
-func (n *locatedNode) setLocation(l Location) { n.location = l }
-
 func TestInitWiresSetLocation(t *testing.T) {
 	require.NotNil(t, astinit.SetLocation)
 	f := NewSourceFile("/a.fb", "grammar G")
-	n := &locatedNode{}
+	n := &Grammar{}
 	astinit.SetLocation(n, Location{Source: f, Start: 8, End: 9})
-	require.Equal(t, "G", n.location.Text())
+	require.Equal(t, "G", n.Location().Text())
+}
+
+func TestInitWiresSetContainer(t *testing.T) {
+	require.NotNil(t, astinit.SetContainer)
+	g := &Grammar{}
+	rule := &ParserRule{}
+	astinit.SetContainer(rule, g)
+	require.Same(t, g, rule.Container())
+
+	// A nil container is a nil Node, not a typed nil.
+	astinit.SetContainer(g, nil)
+	require.Nil(t, g.Container())
 }

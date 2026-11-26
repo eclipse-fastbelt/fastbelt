@@ -11,8 +11,18 @@ type locationSetter interface {
 	setLocation(Location)
 }
 
+// containerSetter is implemented by nodes with a container.
+type containerSetter interface {
+	setContainer(Node)
+}
+
 func init() {
 	astinit.SetLocation = func(node, location any) {
 		node.(locationSetter).setLocation(location.(Location))
+	}
+	astinit.SetContainer = func(node, container any) {
+		// A nil container stays a nil Node instead of a nil any.
+		c, _ := container.(Node)
+		node.(containerSetter).setContainer(c)
 	}
 }

@@ -5,6 +5,7 @@
 package pluginapi
 
 import (
+	"typefox.dev/fastbelt/internal/artifacts/astinit"
 	"typefox.dev/fastbelt/pluginapi/ast"
 	"typefox.dev/fastbelt/pluginapi/tokens"
 )
@@ -42,4 +43,30 @@ type BuildArtifacts struct {
 	TokenModes []*tokens.TokenMode
 	// Sources are the .fb grammar files of the build, sorted by path.
 	Sources []*ast.SourceFile
+	// Grammar is the AST of the merged grammar of all Sources, after infix
+	// expansion. See the [ast] package documentation.
+	Grammar *ast.Grammar
+
+	// tokenDeclarations backs TokenDeclaration. It is set by the build
+	// through internal/artifacts/astinit.
+	tokenDeclarations map[*tokens.TokenType]ast.TokenDeclaration
+}
+
+// TokenDeclaration returns the declaration of a token type in
+// [BuildArtifacts.Grammar]: the *[ast.TokenDecl] of a regexp token type, the
+// *[ast.TokenGroup] of a group (also a synthetic one), or the first
+// *[ast.TokenDecl] of a keyword declared with token A: "a" (see
+// [tokens.TokenType] for the order of such declarations). It returns nil for
+// EOF and for keywords without a token declaration.
+//
+// For every declaration d, d.TokenType links the other way; for keywords with
+// several declarations, only the first one is returned here.
+func (a BuildArtifacts) TokenDeclaration(tt *tokens.TokenType) ast.TokenDeclaration {
+	return a.tokenDeclarations[tt]
+}
+
+func init() {
+	astinit.SetTokenDeclarations = func(artifacts, declarations any) {
+		artifacts.(*BuildArtifacts).tokenDeclarations = declarations.(map[*tokens.TokenType]ast.TokenDeclaration)
+	}
 }

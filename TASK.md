@@ -68,6 +68,8 @@ pluginapi          Plugin, BuildArtifacts, Language                      (import
   `any` parameters, imports nothing – in particular not `ast`, to avoid a cycle). `pluginapi/ast` fills the variables
   in its `init()`; the converter calls them to set unexported node state (container, location). Go's `internal` rule
   allows this import (both live under the module root), while plugin authors cannot import `astinit` themselves.
+  `pluginapi` uses the same mechanism for the unexported map behind `BuildArtifacts.TokenDeclaration`
+  (`astinit.SetTokenDeclarations`, filled in `pluginapi`'s `init()`, called from `cmd` when assembling the artifacts).
 - Pointers between artifacts are fine as long as they point to `pluginapi*` types. Indices are kept as identity (`TokenTypes[i].Index == i`, `TokenModes[i].Index == i`) and match the runtime IDs. This replaces the original wording "connect them via token indices".
 - Artifacts form a pointer graph (incl. cycles); they are **not** meant to be JSON-marshalled.
 

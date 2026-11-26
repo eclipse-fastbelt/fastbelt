@@ -22,6 +22,7 @@ import (
 
 	core "typefox.dev/fastbelt"
 	"typefox.dev/fastbelt/internal/artifacts"
+	"typefox.dev/fastbelt/internal/artifacts/astinit"
 	"typefox.dev/fastbelt/internal/generator"
 	"typefox.dev/fastbelt/internal/grammar"
 	"typefox.dev/fastbelt/pluginapi"
@@ -197,11 +198,15 @@ func buildArtifacts(inputDir string, languages []Language, loaded *loadedGrammar
 	if err != nil {
 		return pluginapi.BuildArtifacts{}, err
 	}
+	root, tokenDecls, err := artifacts.Grammar(gen.grammar, loaded.nodeSources, gen.tokenTypes, tokenTypes)
+	if err != nil {
+		return pluginapi.BuildArtifacts{}, err
+	}
 	langs := artifacts.Languages(configs)
 	for i, lang := range langs {
 		lang.EntryMode = entryModes[i]
 	}
-	return pluginapi.BuildArtifacts{
+	result := pluginapi.BuildArtifacts{
 		InputDir:   inputDir,
 		OutputDir:  gen.outDir,
 		Package:    gen.pkg,
@@ -209,7 +214,10 @@ func buildArtifacts(inputDir string, languages []Language, loaded *loadedGrammar
 		TokenTypes: tokenTypes,
 		TokenModes: tokenModes,
 		Sources:    loaded.sources,
-	}, nil
+		Grammar:    root,
+	}
+	astinit.SetTokenDeclarations(&result, tokenDecls)
+	return result, nil
 }
 
 // isNilPlugin reports whether p is a nil interface or wraps a nil pointer,
