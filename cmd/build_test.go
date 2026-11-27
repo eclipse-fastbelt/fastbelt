@@ -750,13 +750,12 @@ func TestLoadGrammarDirRecordsNodeSourcesBeforeMerging(t *testing.T) {
 		"a.fb", splitGreetingGrammarA,
 		"b.fb", splitGreetingGrammarB,
 	)
-	// A relative input dir still yields absolute source paths.
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	rel, err := filepath.Rel(wd, dir)
-	require.NoError(t, err)
+	// A relative input dir still yields absolute source paths. Change into the
+	// parent dir rather than using filepath.Rel: on Windows the temp dir and the
+	// working dir may be on different drives.
+	t.Chdir(filepath.Dir(dir))
 
-	loaded, err := loadGrammarDir(rel)
+	loaded, err := loadGrammarDir(filepath.Base(dir))
 	require.NoError(t, err)
 	require.Len(t, loaded.sources, 2)
 	a, b := loaded.sources[0], loaded.sources[1]
