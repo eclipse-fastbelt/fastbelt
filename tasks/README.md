@@ -12,6 +12,7 @@ Concrete work items are in one file per task. Do them roughly in this order:
 - [7. Remove TextMate from `cmd` and `internal/generator`](07-remove-from-cmd.md)
 - [8. Examples and scaffold](08-examples-and-scaffold.md)
 - [9. Documentation and cleanup](09-docs-and-cleanup.md)
+- [10. Line anchors in token regexps](10-regexp-anchors.md)
 
 ## Starting point
 
