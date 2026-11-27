@@ -7,6 +7,11 @@
 // languages are configured, wires them for dispatch inside a single language
 // server. The fastbelt CLI (cmd/fastbelt) is a thin wrapper over this package
 // for use cases that only need a single language.
+//
+// [BuildContext.Plugins] registers plugins that run after the generated files
+// have been written and produce additional output from the build artifacts.
+// Plugins are only available through this package, not through the CLI. See
+// [typefox.dev/fastbelt/pluginapi] for details.
 package cmd
 
 import (
@@ -16,12 +21,18 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
+	"runtime/debug"
 	"slices"
 	"strings"
 
 	core "typefox.dev/fastbelt"
+	"typefox.dev/fastbelt/internal/artifacts"
+	"typefox.dev/fastbelt/internal/artifacts/astinit"
 	"typefox.dev/fastbelt/internal/generator"
 	"typefox.dev/fastbelt/internal/grammar"
+	"typefox.dev/fastbelt/pluginapi"
+	"typefox.dev/fastbelt/pluginapi/ast"
 	"typefox.dev/fastbelt/textdoc"
 	"typefox.dev/fastbelt/workspace"
 	"typefox.dev/lsp"
@@ -58,6 +69,9 @@ type BuildContext struct {
 	Railroad bool
 	// Verbose, if true, will add additional logging information.
 	Verbose bool
+	// Plugins are run after all generated files have been written, in this
+	// order. The first failing plugin aborts the build. See [pluginapi.Plugin].
+	Plugins []pluginapi.Plugin
 }
 
 // Build performs the code generation step for the fastbelt build process.
@@ -66,14 +80,22 @@ func (c *BuildContext) Build() error {
 	if len(c.Languages) == 0 {
 		return fmt.Errorf("no languages configured")
 	}
+	// Check the plugins before generating, so a nil plugin fails the build
+	// without a panic and before any file is written.
+	for i, p := range c.Plugins {
+		if isNilPlugin(p) {
+			return fmt.Errorf("plugin %d is nil", i)
+		}
+	}
 	fullInput, err := filepath.Abs(c.Input)
 	if err != nil {
 		return err
 	}
-	g, err := LoadGrammarDir(fullInput)
+	loaded, err := loadGrammarDir(fullInput)
 	if err != nil {
 		return err
 	}
+	g := loaded.grammar
 
 	entries := make([]grammar.ParserRule, len(c.Languages))
 	entryModes := make([]string, len(c.Languages))
@@ -149,13 +171,140 @@ func (c *BuildContext) Build() error {
 	if pkg == "" {
 		pkg = filepath.Base(out)
 	}
-	return Generate(g, entries, entryModes, selectors, out, pkg, c.ATN, c.Railroad, c.Verbose)
+	gen, err := generate(g, entries, entryModes, selectors, out, pkg, c.ATN, c.Railroad, c.Verbose)
+	if err != nil {
+		return err
+	}
+	if len(c.Plugins) == 0 {
+		return nil
+	}
+	artifacts, err := buildArtifacts(fullInput, c.Languages, loaded, gen)
+	if err != nil {
+		return fmt.Errorf("building plugin artifacts: %w", err)
+	}
+	return runPlugins(c.Plugins, artifacts)
+}
+
+// buildArtifacts converts the configured languages and the result of the
+// generation into the artifacts handed to plugins.
+func buildArtifacts(inputDir string, languages []Language, loaded *loadedGrammar, gen *generation) (pluginapi.BuildArtifacts, error) {
+	configs := make([]artifacts.LanguageConfig, len(languages))
+	for i, lang := range languages {
+		configs[i] = artifacts.LanguageConfig{
+			LanguageID: lang.LanguageID,
+			Entry:      lang.Entry,
+			Patterns:   lang.Patterns,
+		}
+	}
+	tokenTypes, err := artifacts.TokenTypes(gen.grammar, gen.tokenTypes)
+	if err != nil {
+		return pluginapi.BuildArtifacts{}, err
+	}
+	tokenModes, entryModes, err := artifacts.TokenModes(gen.grammar, gen.entries, gen.entryModes, gen.tokenTypes, tokenTypes)
+	if err != nil {
+		return pluginapi.BuildArtifacts{}, err
+	}
+	root, tokenDecls, err := artifacts.Grammar(gen.grammar, loaded.nodeSources, gen.tokenTypes, tokenTypes)
+	if err != nil {
+		return pluginapi.BuildArtifacts{}, err
+	}
+	declaredTypes, err := artifacts.Types(gen.grammar, root)
+	if err != nil {
+		return pluginapi.BuildArtifacts{}, err
+	}
+	entryRules, err := artifacts.EntryRules(gen.grammar, root, gen.entries)
+	if err != nil {
+		return pluginapi.BuildArtifacts{}, err
+	}
+	langs := artifacts.Languages(configs)
+	for i, lang := range langs {
+		lang.EntryMode = entryModes[i]
+		lang.EntryRule = entryRules[i]
+	}
+	result := pluginapi.BuildArtifacts{
+		InputDir:   inputDir,
+		OutputDir:  gen.outDir,
+		Package:    gen.pkg,
+		Languages:  langs,
+		TokenTypes: tokenTypes,
+		TokenModes: tokenModes,
+		Sources:    loaded.sources,
+		Grammar:    root,
+		Types:      declaredTypes,
+	}
+	astinit.SetTokenDeclarations(&result, tokenDecls)
+	return result, nil
+}
+
+// isNilPlugin reports whether p is a nil interface or wraps a nil pointer,
+// such as a constructor that returned a nil *T.
+func isNilPlugin(p pluginapi.Plugin) bool {
+	if p == nil {
+		return true
+	}
+	v := reflect.ValueOf(p)
+	return v.Kind() == reflect.Pointer && v.IsNil()
+}
+
+// runPlugins calls each plugin in order and stops at the first error.
+func runPlugins(plugins []pluginapi.Plugin, artifacts pluginapi.BuildArtifacts) error {
+	for _, p := range plugins {
+		if err := runPlugin(p, artifacts); err != nil {
+			return fmt.Errorf("plugin %q: %w", p.Name(), err)
+		}
+	}
+	return nil
+}
+
+// runPlugin calls the plugin and turns a panic into an error, so that a
+// failing plugin is named in the error instead of crashing the build. The
+// error contains the stack trace of the panic.
+func runPlugin(p pluginapi.Plugin, artifacts pluginapi.BuildArtifacts) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if rErr, ok := r.(error); ok {
+				err = fmt.Errorf("panicked: %w\n%s", rErr, debug.Stack())
+			} else {
+				err = fmt.Errorf("panicked: %v\n%s", r, debug.Stack())
+			}
+		}
+	}()
+	return p.Build(artifacts)
 }
 
 // LoadGrammarDir parses, links and validates every top-level .fb file in dir as
 // one grammar and returns the combined result. Diagnostics are printed; any
 // error diagnostic aborts with an error.
 func LoadGrammarDir(dir string) (grammar.Grammar, error) {
+	loaded, err := loadGrammarDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	return loaded.grammar, nil
+}
+
+// loadedGrammar is the result of loading a grammar directory.
+type loadedGrammar struct {
+	// grammar is the combined grammar, see [parseAndMerge].
+	grammar grammar.Grammar
+	// sources are the grammar files, sorted by path.
+	sources []*ast.SourceFile
+	// nodeSources maps every parsed node to the file it was parsed from. It is
+	// recorded before merging, which moves all nodes into one fake document.
+	// The merged root of a multi-file grammar has no entry, and neither have
+	// nodes created later by infix expansion: the rule bodies can find their
+	// file via their InfixRule container, but the synthesized operator token
+	// groups are attached to the grammar root.
+	nodeSources map[core.AstNode]*ast.SourceFile
+}
+
+// loadGrammarDir implements [LoadGrammarDir] and keeps the source files.
+func loadGrammarDir(dir string) (*loadedGrammar, error) {
+	// Source paths are absolute, also for a relative dir.
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
 	// Glob returns the matches sorted, so the merged grammar is deterministic.
 	files, err := filepath.Glob(filepath.Join(dir, "*.fb"))
 	if err != nil {
@@ -169,18 +318,20 @@ func LoadGrammarDir(dir string) (grammar.Grammar, error) {
 
 // parseAndMerge parses every grammar file in a single shared container (so
 // cross-file references link), aborts on any error diagnostic, and returns the
-// combined grammar. A single file is returned as-is. Multiple files are merged
-// into one grammar.
-func parseAndMerge(files []string) (grammar.Grammar, error) {
+// combined grammar with its source files. A single file's grammar is used
+// as-is; multiple files are merged into one grammar.
+func parseAndMerge(files []string) (*loadedGrammar, error) {
 	sc := grammar.CreateServices()
 	documents := sc.MustGet[workspace.DocumentManager]()
 
 	docs := make([]*core.Document, 0, len(files))
+	sources := make([]*ast.SourceFile, 0, len(files))
 	for _, path := range files {
 		text, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
+		sources = append(sources, ast.NewSourceFile(path, string(text)))
 		file := textdoc.NewFile(lsp.URIFromPath(path), "fb", 0, string(text))
 		doc := core.NewDocument(file)
 		documents.Set(doc)
@@ -196,17 +347,24 @@ func parseAndMerge(files []string) (grammar.Grammar, error) {
 	}
 
 	grammars := make([]grammar.Grammar, 0, len(docs))
-	for _, doc := range docs {
+	nodeSources := map[core.AstNode]*ast.SourceFile{}
+	for i, doc := range docs {
 		g, ok := doc.Root.(grammar.Grammar)
 		if !ok {
 			return nil, fmt.Errorf("parse result is not a Grammar")
 		}
 		grammars = append(grammars, g)
+		for node := range core.AllNodes(g) {
+			nodeSources[node] = sources[i]
+		}
 	}
+	loaded := &loadedGrammar{sources: sources, nodeSources: nodeSources}
 	if len(grammars) == 1 {
-		return grammars[0], nil
+		loaded.grammar = grammars[0]
+	} else {
+		loaded.grammar = mergeGrammars(grammars)
 	}
-	return mergeGrammars(grammars), nil
+	return loaded, nil
 }
 
 // mergeGrammars concatenates several grammars into a single one (elements
@@ -297,8 +455,27 @@ func reportDiagnostics(docs []*core.Document) error {
 // means the default mode); with a single entry the output matches the
 // single-language CLI.
 func Generate(g grammar.Grammar, entries []grammar.ParserRule, entryModes []string, selectors []generator.Selector, outDir, pkg string, atn, railroad, verbose bool) error {
+	_, err := generate(g, entries, entryModes, selectors, outDir, pkg, atn, railroad, verbose)
+	return err
+}
+
+// generation is the intermediate data of a code generation run, kept for
+// building the plugin artifacts.
+type generation struct {
+	// grammar is the merged grammar after infix expansion.
+	grammar grammar.Grammar
+	// entries and entryModes are index-aligned to the configured languages.
+	entries    []grammar.ParserRule
+	entryModes []string
+	tokenTypes generator.GenerateTokenTypesResult
+	outDir     string
+	pkg        string
+}
+
+// generate implements [Generate] and returns the intermediate data.
+func generate(g grammar.Grammar, entries []grammar.ParserRule, entryModes []string, selectors []generator.Selector, outDir, pkg string, atn, railroad, verbose bool) (*generation, error) {
 	if err := os.MkdirAll(outDir, 0755); err != nil {
-		return err
+		return nil, err
 	}
 	write := func(name, file, content string) error {
 		path := filepath.Join(outDir, file)
@@ -314,7 +491,7 @@ func Generate(g grammar.Grammar, entries []grammar.ParserRule, entryModes []stri
 	// Desugar infix rules once, so every generator below sees the synthesized
 	// operator token groups and flat rule bodies.
 	if err := grammar.ExpandInfixRules(g); err != nil {
-		return err
+		return nil, err
 	}
 	tokenTypes := generator.GenerateTokenTypes(g)
 	atnData := generator.BuildParserATNData(g, tokenTypes)
@@ -333,28 +510,35 @@ func Generate(g grammar.Grammar, entries []grammar.ParserRule, entryModes []stri
 	}
 	for _, f := range files {
 		if err := write(f.name, f.file, f.content); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if atn {
 		if err := write("atn-md", "atn.md", generator.GenerateATNMarkdown(g, pkg, tokenTypes)); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if railroad {
 		if err := os.MkdirAll(filepath.Join(outDir, "railroad"), 0755); err != nil {
-			return err
+			return nil, err
 		}
 		diagrams := generator.GenerateRailroadDiagrams(g)
 		for _, d := range diagrams {
 			if err := write("railroad-"+d.Name, filepath.Join("railroad", d.Name+".svg"), d.SVG); err != nil {
-				return err
+				return nil, err
 			}
 		}
 		if err := write("railroad-index", filepath.Join("railroad", "index.md"),
 			generator.GenerateRailroadIndexMarkdown(pkg, diagrams)); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return &generation{
+		grammar:    g,
+		entries:    entries,
+		entryModes: entryModes,
+		tokenTypes: tokenTypes,
+		outDir:     outDir,
+		pkg:        pkg,
+	}, nil
 }

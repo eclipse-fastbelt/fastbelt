@@ -1,0 +1,77 @@
+// Copyright 2026 TypeFox GmbH
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+
+package pluginapi
+
+import (
+	"typefox.dev/fastbelt/internal/artifacts/astinit"
+	"typefox.dev/fastbelt/pluginapi/ast"
+	"typefox.dev/fastbelt/pluginapi/tokens"
+	"typefox.dev/fastbelt/pluginapi/types"
+)
+
+// Plugin produces additional output from the artifacts of a Fastbelt build.
+// See the package documentation for when and how plugins are called.
+type Plugin interface {
+	// Name identifies the plugin in error messages.
+	Name() string
+	// Build runs the plugin. The artifacts are shared with other plugins and
+	// must not be modified.
+	Build(artifacts BuildArtifacts) error
+}
+
+// BuildArtifacts holds everything a Fastbelt build produced that plugins may
+// use. It is read-only by contract.
+type BuildArtifacts struct {
+	// InputDir is the absolute path of the directory containing the .fb grammar files.
+	InputDir string
+	// OutputDir is the absolute path of the directory the generated Go files
+	// were written to. Plugins resolve relative output paths against it.
+	OutputDir string
+	// Package is the Go package name of the generated code.
+	Package string
+	// Languages are the languages configured for the build, in configured
+	// order. There is at least one.
+	Languages []*Language
+	// TokenTypes are the token types of the generated lexer, indexed by their
+	// runtime token index: TokenTypes[i].Index == i. Index 0 is EOF.
+	TokenTypes []*tokens.TokenType
+	// TokenModes are the token modes the generated lexer runs, indexed by
+	// their generated mode constant: TokenModes[i].Index == i. See
+	// [tokens.TokenMode] for how they relate to the declared modes. There is
+	// at least one.
+	TokenModes []*tokens.TokenMode
+	// Sources are the .fb grammar files of the build, sorted by path.
+	Sources []*ast.SourceFile
+	// Grammar is the AST of the merged grammar of all Sources, after infix
+	// expansion. See the [ast] package documentation.
+	Grammar *ast.Grammar
+	// Types are the types of the interfaces declared in Grammar, in
+	// declaration order (Types[i].Declaration == Grammar.Interfaces[i]),
+	// which is also the order of the generated Go interfaces.
+	Types []*types.Type
+
+	// tokenDeclarations backs TokenDeclaration. It is set by the build
+	// through internal/artifacts/astinit.
+	tokenDeclarations map[*tokens.TokenType]ast.TokenDeclaration
+}
+
+// TokenDeclaration returns the declaration of a token type in
+// [BuildArtifacts.Grammar]: the *[ast.TokenDecl] of a regexp token type, the
+// *[ast.TokenGroup] of a group (also a synthetic one), or the first
+// *[ast.TokenDecl] of a keyword declared with token A: "a" (see
+// [tokens.TokenType] for the order of such declarations). It returns nil for
+// EOF and for keywords without a token declaration.
+//
+// For every declaration d, d.TokenType links the other way; for keywords with
+// several declarations, only the first one is returned here.
+func (a BuildArtifacts) TokenDeclaration(tt *tokens.TokenType) ast.TokenDeclaration {
+	return a.tokenDeclarations[tt]
+}
+
+func init() {
+	astinit.SetTokenDeclarations = func(artifacts, declarations any) {
+		artifacts.(*BuildArtifacts).tokenDeclarations = declarations.(map[*tokens.TokenType]ast.TokenDeclaration)
+	}
+}

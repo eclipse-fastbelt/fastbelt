@@ -643,3 +643,63 @@ func getAllTokenGroupMembers(tokenGroup grammar.TokenGroup, keywords GetAllKeywo
 	sort.Strings(slice)
 	return slice
 }
+
+// TokenIndexCount returns the number of runtime token indices, including EOF
+// at index 0. The indices 0 to TokenIndexCount()-1 are all in use.
+func (r GenerateTokenTypesResult) TokenIndexCount() int {
+	return getMaxTokenIndex(r) + 1
+}
+
+// KeywordTokenIndex returns the token index of the keyword k. Keywords with
+// the same value share one index.
+func (r GenerateTokenTypesResult) KeywordTokenIndex(k grammar.Keyword) (int, bool) {
+	index, ok := r.TokenIndex.ByKeyword[k.Value()]
+	return index, ok
+}
+
+// TokenDeclTokenIndex returns the token index of the token declaration t. A
+// declaration with keyword content shares the index of its keyword.
+func (r GenerateTokenTypesResult) TokenDeclTokenIndex(t grammar.TokenDecl) (int, bool) {
+	index, ok := r.TokenIndex.ByToken[t]
+	return index, ok
+}
+
+// TokenGroupTokenIndex returns the token index of the token group g.
+func (r GenerateTokenTypesResult) TokenGroupTokenIndex(g grammar.TokenGroup) (int, bool) {
+	index, ok := r.TokenIndex.ByTokenGroup[g]
+	return index, ok
+}
+
+// DirectTokenGroupMemberIndices returns the token indices of the direct
+// members of the token group g, sorted and without duplicates: referenced
+// token declarations and token groups (a nested group is not resolved),
+// keywords, and the keywords matched by keyword selectors.
+func (r GenerateTokenTypesResult) DirectTokenGroupMemberIndices(g grammar.TokenGroup) []int {
+	members := map[int]bool{}
+	for _, tokenRef := range g.TokenRefs() {
+		switch rule := tokenRef.Ref(context.Background()).(type) {
+		case grammar.TokenGroup:
+			if index, ok := r.TokenIndex.ByTokenGroup[rule]; ok {
+				members[index] = true
+			}
+		case grammar.TokenDecl:
+			if index, ok := r.TokenIndex.ByToken[rule]; ok {
+				members[index] = true
+			}
+		}
+	}
+	for _, keyword := range g.Keywords() {
+		if index, ok := r.TokenIndex.ByKeyword[keyword.Value()]; ok {
+			members[index] = true
+		}
+	}
+	for _, selector := range g.KeywordSelectors() {
+		pattern := regexp.MustCompile(grammar.RegexpValue(selector.Image))
+		for _, keyword := range r.Keywords.Keywords {
+			if index, ok := r.TokenIndex.ByKeyword[keyword.Value()]; ok && pattern.MatchString(grammar.KeywordValue(keyword)) {
+				members[index] = true
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(members))
+}

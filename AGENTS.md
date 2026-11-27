@@ -13,6 +13,8 @@ For project documentation, read the package documentation written in Go doc form
 - `workspace/doc.go`: Document lifecycle, loading, edits, and the build pipeline
 - `server/doc.go`: Language Server Protocol (LSP) implementation
 - `test/doc.go`: Utilities for testing Fastbelt language implementations
+- `pluginapi/doc.go`: Plugin API for extending code generation (writing plugins, build artifacts)
+- `plugins/doc.go`: Plugins maintained as part of Fastbelt
 
 Utility packages:
 

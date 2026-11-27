@@ -93,6 +93,17 @@
 // this pattern and can be used as a starting point for service-container
 // customization.
 //
+// # Plugins
+//
+// Code generation can be extended with plugins that produce additional output
+// from a grammar, such as syntax highlighting definitions or documentation.
+// Plugins are registered in [typefox.dev/fastbelt/cmd.BuildContext] (Go API
+// only, not through the CLI) and run after the Go code has been generated.
+// They receive a read-only view of the build: languages, token types and
+// modes, the grammar source files and AST, and the derived types. See
+// [typefox.dev/fastbelt/pluginapi] for writing plugins and
+// [typefox.dev/fastbelt/plugins] for the plugins shipped with Fastbelt.
+//
 // # To Go Further
 //
 // For implementing the exact behavior of your language, these subpackages are
