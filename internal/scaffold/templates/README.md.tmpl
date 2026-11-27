@@ -9,7 +9,7 @@ It includes:
 - **`gen.go`** and **`gen/main.go`**: the `//go:generate go run ./gen` directive and the generator configuration (`cmd.BuildContext`): entry rule, language ID, file patterns{{if .CreateVSCodeExtension}}, and the paths of the TextMate grammars{{end}}. It emits `*_gen.go`{{if .CreateVSCodeExtension}} and `vscode-extension/syntaxes/*.tmLanguage.json`{{end}}.
 - **`cmd/{{.LSPSlug}}`**: Language server entrypoint (stdio JSON-RPC).
 {{ if .CreateVSCodeExtension -}}
-- **`vscode-extension/`**: VS Code language client + generated TextMate grammars (`syntaxes/`).
+- **`vscode-extension/`**: VS Code language client + generated TextMate grammars (`syntaxes/`). See the [`plugins/textmate`](https://pkg.go.dev/typefox.dev/fastbelt/plugins/textmate) package documentation for the options and the `package.json` setup.
 - **Root `package.json`**: npm workspace so you can build and package the extension from the repo root.
 {{- end}}
 

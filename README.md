@@ -57,7 +57,7 @@ To bootstrap a **new Go module** for a language, run:
 fastbelt scaffold --module example.com/you/mylang --language "MyLanguage" --vscode
 ```
 
-That creates a directory named after the last segment of `--module` (here `./mylang`) in the current working directory, runs `go mod init`, pulls in fastbelt as a library dependency, and runs `go generate` and `go mod tidy` so generated parser, lexer, linker, and supporting files (and, with `--vscode`, the TextMate grammars) are ready to use. The generator configuration lives in `gen/main.go`.
+That creates a directory named after the last segment of `--module` (here `./mylang`) in the current working directory, runs `go mod init`, pulls in fastbelt as a library dependency, and runs `go generate` and `go mod tidy` so generated parser, lexer, linker, and supporting files (and, with `--vscode`, the TextMate grammars) are ready to use. The generator configuration lives in `gen/main.go`. For the TextMate grammars, see the [`plugins/textmate`](https://pkg.go.dev/typefox.dev/fastbelt/plugins/textmate) package documentation.
 
 In the generated package directory you get:
 

@@ -15,6 +15,7 @@ For project documentation, read the package documentation written in Go doc form
 - `test/doc.go`: Utilities for testing Fastbelt language implementations
 - `pluginapi/doc.go`: Plugin API for extending code generation (writing plugins, build artifacts)
 - `plugins/doc.go`: Plugins maintained as part of Fastbelt
+- `plugins/textmate/doc.go`: TextMate grammar generation for syntax highlighting
 
 Utility packages:
 
