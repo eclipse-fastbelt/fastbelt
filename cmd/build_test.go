@@ -418,7 +418,7 @@ func TestBuildPassesCustomLoggerToPlugin(t *testing.T) {
 func TestBuildPassesDefaultLoggerToPlugin(t *testing.T) {
 	stderr, err := os.Create(filepath.Join(t.TempDir(), "stderr"))
 	require.NoError(t, err)
-	defer stderr.Close()
+	defer func() { require.NoError(t, stderr.Close()) }()
 	orig := os.Stderr
 	os.Stderr = stderr
 	t.Cleanup(func() { os.Stderr = orig })
