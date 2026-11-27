@@ -22,6 +22,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"slices"
 	"strings"
 
@@ -248,11 +249,27 @@ func isNilPlugin(p pluginapi.Plugin) bool {
 // runPlugins calls each plugin in order and stops at the first error.
 func runPlugins(plugins []pluginapi.Plugin, artifacts pluginapi.BuildArtifacts) error {
 	for _, p := range plugins {
-		if err := p.Build(artifacts); err != nil {
+		if err := runPlugin(p, artifacts); err != nil {
 			return fmt.Errorf("plugin %q: %w", p.Name(), err)
 		}
 	}
 	return nil
+}
+
+// runPlugin calls the plugin and turns a panic into an error, so that a
+// failing plugin is named in the error instead of crashing the build. The
+// error contains the stack trace of the panic.
+func runPlugin(p pluginapi.Plugin, artifacts pluginapi.BuildArtifacts) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if rErr, ok := r.(error); ok {
+				err = fmt.Errorf("panicked: %w\n%s", rErr, debug.Stack())
+			} else {
+				err = fmt.Errorf("panicked: %v\n%s", r, debug.Stack())
+			}
+		}
+	}()
+	return p.Build(artifacts)
 }
 
 // LoadGrammarDir parses, links and validates every top-level .fb file in dir as

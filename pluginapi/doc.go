@@ -70,7 +70,10 @@
 // The build fails fast: the first plugin that returns an error aborts the
 // build, later plugins are not called, and Build returns the error wrapped
 // with the plugin name (plugin "my-plugin": ...); use [errors.Is] or
-// [errors.As] to inspect the original error. Files written before the failure,
+// [errors.As] to inspect the original error. A panic in a plugin is handled
+// the same way: it is recovered and returned as an error named after the
+// plugin (plugin "my-plugin": panicked: ...) that includes the stack trace;
+// if the panic value is an error, it is wrapped. Files written before the failure,
 // including the generated Go files, are not removed. A nil plugin is rejected
 // before anything is generated.
 //

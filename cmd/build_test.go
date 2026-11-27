@@ -439,6 +439,32 @@ func TestBuildAbortsOnFailingPlugin(t *testing.T) {
 	require.Empty(t, later.artifacts)
 }
 
+// panickingPlugin panics with value when built.
+type panickingPlugin struct {
+	value any
+}
+
+func (p *panickingPlugin) Name() string { return "panicking" }
+
+func (p *panickingPlugin) Build(pluginapi.BuildArtifacts) error { panic(p.value) }
+
+func TestBuildReportsPanickingPlugin(t *testing.T) {
+	var log []string
+	later := &recordingPlugin{name: "later", log: &log}
+	ctx := greetingBuildContext(t, &panickingPlugin{value: "kaboom"}, later)
+	err := ctx.Build()
+	require.ErrorContains(t, err, `plugin "panicking": panicked: kaboom`)
+	require.Empty(t, log)
+}
+
+func TestBuildWrapsErrorPanicOfPlugin(t *testing.T) {
+	errBoom := errors.New("boom")
+	ctx := greetingBuildContext(t, &panickingPlugin{value: errBoom})
+	err := ctx.Build()
+	require.ErrorIs(t, err, errBoom)
+	require.ErrorContains(t, err, `plugin "panicking": panicked: boom`)
+}
+
 func TestBuildRejectsNilPlugins(t *testing.T) {
 	var nilPointer *recordingPlugin
 	for name, plugin := range map[string]pluginapi.Plugin{"nil interface": nil, "nil pointer": nilPointer} {
