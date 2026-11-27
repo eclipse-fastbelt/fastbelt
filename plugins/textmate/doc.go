@@ -35,15 +35,19 @@
 //   - CommonFile is the path of the common grammar. It is required.
 //   - LanguageFiles maps language IDs to the path of their grammar. A
 //     language of the build without an entry gets no grammar file. An entry
-//     for a language ID that is not part of the build is an error.
+//     for a language ID that is not part of the build, or with an empty
+//     path, is an error.
 //   - Scopes overrides the scopes derived from token names (see Scopes
 //     below).
 //
 // Relative paths are resolved against
 // [typefox.dev/fastbelt/pluginapi.BuildArtifacts.OutputDir]; absolute paths
 // are used as is. Parent directories are created. The build fails if two
-// paths are the same file, including a language file equal to the common
-// file. These checks run after the Go code has been written.
+// paths are the same after cleaning, including a language file equal to the
+// common file. Paths are compared as strings, so symbolic links and
+// case-insensitive file systems are not taken into account. These checks run
+// after the Go code has been written but before any grammar is written; an
+// I/O error while writing can leave some grammars written.
 //
 // # Files
 //
@@ -103,13 +107,12 @@
 // The plugin reports problems that do not stop the build through
 // [typefox.dev/fastbelt/pluginapi.BuildArtifacts.Logger]:
 //
-//   - a scope override for a token name that is neither a token nor a
-//     keyword of the grammar;
+//   - a scope override for a token name that no token mode uses;
 //   - a token that switches between token modes with different pop tokens
 //     (see Token Modes below).
 //
-// By default, the build prints them as `Warning: <message>` to stderr; set
-// [typefox.dev/fastbelt/cmd.BuildContext.Logger] to handle them differently.
+// See [typefox.dev/fastbelt/pluginapi] for where the build sends them by
+// default and how to collect them.
 //
 // # Approximating the Lexer
 //
