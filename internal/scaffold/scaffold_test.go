@@ -34,7 +34,7 @@ func TestPrepareNames(t *testing.T) {
 	require.Equal(t, "my-lang.fb", n.GrammarFile)
 	require.Equal(t, ".mylang", n.FileDotExt)
 	require.Equal(t, "my-lang-lsp", n.LSPSlug)
-	// The TextMate file and scope names must match those of the generator.
+	// The scope names must match those of the textmate plugin.
 	require.Equal(t, "my-lang.tmLanguage.json", n.SyntaxFile)
 	require.Equal(t, "source.my-lang", n.ScopeName)
 	require.Equal(t, "mylangmodel-common.tmLanguage.json", n.CommonSyntaxFile)
@@ -213,10 +213,13 @@ func TestGenMainTemplate(t *testing.T) {
 		require.Contains(t, src, `Entry:      "Document"`)
 		require.Contains(t, src, `LanguageID: "my-lang"`)
 		require.Contains(t, src, `Patterns:   []string{"**/*.mylang"}`)
+		require.NotContains(t, src, "TextMateOutput")
 		if vscode {
-			require.Contains(t, src, `TextMateOutput: "vscode-extension/syntaxes"`)
+			require.Contains(t, src, `"typefox.dev/fastbelt/plugins/textmate"`)
+			require.Contains(t, src, `CommonFile: "vscode-extension/syntaxes/mylangmodel-common.tmLanguage.json"`)
+			require.Contains(t, src, `"my-lang": "vscode-extension/syntaxes/my-lang.tmLanguage.json"`)
 		} else {
-			require.NotContains(t, src, "TextMateOutput")
+			require.NotContains(t, src, "plugins/textmate")
 		}
 	}
 }

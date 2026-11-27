@@ -6,7 +6,7 @@ It includes:
 
 - **`{{.GrammarFile}}`**: Minimal fastbelt grammar (`{{.GrammarName}}`).
 - **`services.go`**: LSP service wiring (workspace, linking, generated lexer/parser and document selector).
-- **`gen.go`** and **`gen/main.go`**: the `//go:generate go run ./gen` directive and the generator configuration (`cmd.BuildContext`): entry rule, language ID, file patterns{{if .CreateVSCodeExtension}}, and the output directory of the TextMate grammars{{end}}. It emits `*_gen.go`{{if .CreateVSCodeExtension}} and `vscode-extension/syntaxes/*.tmLanguage.json`{{end}}.
+- **`gen.go`** and **`gen/main.go`**: the `//go:generate go run ./gen` directive and the generator configuration (`cmd.BuildContext`): entry rule, language ID, file patterns{{if .CreateVSCodeExtension}}, and the paths of the TextMate grammars{{end}}. It emits `*_gen.go`{{if .CreateVSCodeExtension}} and `vscode-extension/syntaxes/*.tmLanguage.json`{{end}}.
 - **`cmd/{{.LSPSlug}}`**: Language server entrypoint (stdio JSON-RPC).
 {{ if .CreateVSCodeExtension -}}
 - **`vscode-extension/`**: VS Code language client + generated TextMate grammars (`syntaxes/`).

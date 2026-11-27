@@ -7,6 +7,10 @@ import (
 	"log"
 
 	"typefox.dev/fastbelt/cmd"
+{{- if .CreateVSCodeExtension}}
+	"typefox.dev/fastbelt/pluginapi"
+	"typefox.dev/fastbelt/plugins/textmate"
+{{- end}}
 )
 
 func main() {
@@ -21,7 +25,13 @@ func main() {
 			},
 		},
 {{- if .CreateVSCodeExtension}}
-		TextMateOutput: "vscode-extension/syntaxes",
+		// The textmate plugin writes the TextMate grammars that vscode-extension/package.json refers to.
+		Plugins: []pluginapi.Plugin{textmate.New(textmate.Options{
+			CommonFile: "vscode-extension/syntaxes/{{.CommonSyntaxFile}}",
+			LanguageFiles: map[string]string{
+				"{{.LanguageID}}": "vscode-extension/syntaxes/{{.SyntaxFile}}",
+			},
+		})},
 {{- end}}
 		Verbose: true,
 	}

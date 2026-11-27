@@ -68,7 +68,8 @@ func TestScaffoldModule_endToEnd(t *testing.T) {
 		require.DirExists(t, moduleRoot)
 	})
 
-	// go generate in the scaffold writes the TextMate grammars; package.json must point at them.
+	// go generate in the scaffold runs the textmate plugin, which writes the TextMate grammars;
+	// package.json must point at them with the plugin's scope names.
 	t.Run("textmate grammars", func(t *testing.T) {
 		extDir := filepath.Join(moduleRoot, "vscode-extension")
 		pkgJSON, err := os.ReadFile(filepath.Join(extDir, "package.json"))
@@ -83,7 +84,9 @@ func TestScaffoldModule_endToEnd(t *testing.T) {
 		}
 		require.NoError(t, json.Unmarshal(pkgJSON, &pkg))
 		require.Len(t, pkg.Contributes.Grammars, 2)
+		var scopeNames []string
 		for _, g := range pkg.Contributes.Grammars {
+			scopeNames = append(scopeNames, g.ScopeName)
 			grammarJSON, err := os.ReadFile(filepath.Join(extDir, filepath.FromSlash(g.Path)))
 			require.NoError(t, err, "grammar %s", g.Path)
 			var grammar struct {
@@ -92,6 +95,10 @@ func TestScaffoldModule_endToEnd(t *testing.T) {
 			require.NoError(t, json.Unmarshal(grammarJSON, &grammar), "grammar %s", g.Path)
 			require.Equal(t, g.ScopeName, grammar.ScopeName, "grammar %s", g.Path)
 		}
+		require.ElementsMatch(t, []string{
+			"source.e2e-lang",
+			"source.e2elangmodel-common",
+		}, scopeNames)
 	})
 
 	for _, step := range []struct {
