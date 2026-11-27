@@ -279,7 +279,9 @@ func writeOniguruma(sb *strings.Builder, re *syntax.Regexp) {
 		sb.WriteString(`\B`)
 	case syntax.OpCapture:
 		if re.Name != "" {
-			sb.WriteString("(?<" + re.Name + ">")
+			sb.WriteString("(?<")
+			sb.WriteString(re.Name)
+			sb.WriteByte('>')
 		} else {
 			sb.WriteString("(")
 		}
@@ -411,7 +413,9 @@ func writeLiteralRune(sb *strings.Builder, r rune, inClass bool) {
 		return
 	}
 	if !unicode.IsPrint(r) || r == utf8.RuneError {
-		sb.WriteString(`\x{` + strconv.FormatInt(int64(r), 16) + `}`)
+		sb.WriteString(`\x{`)
+		sb.WriteString(strconv.FormatInt(int64(r), 16))
+		sb.WriteByte('}')
 		return
 	}
 	sb.WriteRune(r)
