@@ -18,6 +18,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -71,6 +72,9 @@ type BuildContext struct {
 	// Plugins are run after all generated files have been written, in this
 	// order. The first failing plugin aborts the build. See [pluginapi.Plugin].
 	Plugins []pluginapi.Plugin
+	// Logger receives the warnings of plugins as [pluginapi.BuildArtifacts.Logger].
+	// If nil, a default logger writes them to stderr.
+	Logger *slog.Logger
 	// TextMateOutput is the directory for the generated TextMate grammars, used for
 	// syntax highlighting in editors like VS Code. If empty, no TextMate grammars
 	// are generated. Otherwise it gets <grammar>-common.tmLanguage.json with the
@@ -215,7 +219,11 @@ func (c *BuildContext) Build() error {
 	if len(c.Plugins) == 0 {
 		return nil
 	}
-	artifacts, err := buildArtifacts(fullInput, c.Languages, loaded, gen)
+	logger := c.Logger
+	if logger == nil {
+		logger = slog.New(newWarningHandler(os.Stderr))
+	}
+	artifacts, err := buildArtifacts(fullInput, c.Languages, logger, loaded, gen)
 	if err != nil {
 		return fmt.Errorf("building plugin artifacts: %w", err)
 	}
@@ -224,7 +232,7 @@ func (c *BuildContext) Build() error {
 
 // buildArtifacts converts the configured languages and the result of the
 // generation into the artifacts handed to plugins.
-func buildArtifacts(inputDir string, languages []Language, loaded *loadedGrammar, gen *generation) (pluginapi.BuildArtifacts, error) {
+func buildArtifacts(inputDir string, languages []Language, logger *slog.Logger, loaded *loadedGrammar, gen *generation) (pluginapi.BuildArtifacts, error) {
 	configs := make([]artifacts.LanguageConfig, len(languages))
 	for i, lang := range languages {
 		configs[i] = artifacts.LanguageConfig{
@@ -268,6 +276,7 @@ func buildArtifacts(inputDir string, languages []Language, loaded *loadedGrammar
 		Sources:    loaded.sources,
 		Grammar:    root,
 		Types:      declaredTypes,
+		Logger:     logger,
 	}
 	astinit.SetTokenDeclarations(&result, tokenDecls)
 	return result, nil

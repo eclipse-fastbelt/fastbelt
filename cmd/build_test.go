@@ -5,7 +5,9 @@
 package cmd
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -376,6 +378,76 @@ func TestBuildPassesArtifactsToPlugin(t *testing.T) {
 	require.True(t, filepath.IsAbs(artifacts.InputDir))
 	require.True(t, filepath.IsAbs(artifacts.OutputDir))
 	require.Equal(t, "multi", artifacts.Package)
+}
+
+// warningPlugin logs msg as a warning.
+type warningPlugin struct{ msg string }
+
+func (p *warningPlugin) Name() string { return "warn" }
+
+func (p *warningPlugin) Build(artifacts pluginapi.BuildArtifacts) error {
+	artifacts.Logger.Warn(p.msg)
+	return nil
+}
+
+// collectingHandler collects the messages of all records.
+type collectingHandler struct {
+	slog.Handler
+	messages []string
+}
+
+func (h *collectingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *collectingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.messages = append(h.messages, r.Message)
+	return nil
+}
+
+func TestBuildPassesCustomLoggerToPlugin(t *testing.T) {
+	plugin := &recordingPlugin{name: "rec"}
+	handler := &collectingHandler{Handler: slog.DiscardHandler}
+	ctx := greetingBuildContext(t, plugin, &warningPlugin{msg: "careful"})
+	ctx.Logger = slog.New(handler)
+	require.NoError(t, ctx.Build())
+
+	require.Len(t, plugin.artifacts, 1)
+	require.Same(t, ctx.Logger, plugin.artifacts[0].Logger)
+	require.Equal(t, []string{"careful"}, handler.messages)
+}
+
+func TestBuildPassesDefaultLoggerToPlugin(t *testing.T) {
+	stderr, err := os.Create(filepath.Join(t.TempDir(), "stderr"))
+	require.NoError(t, err)
+	defer stderr.Close()
+	orig := os.Stderr
+	os.Stderr = stderr
+	t.Cleanup(func() { os.Stderr = orig })
+
+	plugin := &recordingPlugin{name: "rec"}
+	ctx := greetingBuildContext(t, plugin, &warningPlugin{msg: "careful"})
+	require.NoError(t, ctx.Build())
+
+	require.Len(t, plugin.artifacts, 1)
+	require.NotNil(t, plugin.artifacts[0].Logger)
+	written, err := os.ReadFile(stderr.Name())
+	require.NoError(t, err)
+	require.Equal(t, "Warning: careful\n", string(written))
+}
+
+func TestWarningHandlerWritesWarnings(t *testing.T) {
+	var buf strings.Builder
+	logger := slog.New(newWarningHandler(&buf))
+	logger.Info("not shown")
+	logger.Warn("first problem")
+	logger.Error("second problem")
+	require.Equal(t, "Warning: first problem\nWarning: second problem\n", buf.String())
+}
+
+func TestWarningHandlerWritesAttributes(t *testing.T) {
+	var buf strings.Builder
+	logger := slog.New(newWarningHandler(&buf)).With("plugin", "textmate").WithGroup("token")
+	logger.Warn("no scope", "name", "ID", "pattern", "a b", slog.Group("pos", "line", 3))
+	require.Equal(t, `Warning: no scope plugin=textmate token.name=ID token.pattern="a b" token.pos.line=3`+"\n", buf.String())
 }
 
 func TestBuildResolvesRelativeDirsAndDefaultsForPlugins(t *testing.T) {

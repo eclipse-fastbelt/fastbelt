@@ -83,6 +83,20 @@
 // behaves the same wherever it is started. [BuildArtifacts.Package] is the
 // Go package name of the generated code.
 //
+// # Logging
+//
+// Plugins report warnings that do not fail the build through
+// [BuildArtifacts.Logger], a [log/slog.Logger] that is never nil:
+//
+//	artifacts.Logger.Warn(fmt.Sprintf("token %s has no scope", name))
+//
+// The build passes [typefox.dev/fastbelt/cmd.BuildContext.Logger] if it is
+// set. Otherwise it uses a default logger that writes each record of level
+// Warn or higher to stderr as one line, "Warning: <msg>", followed by its
+// attributes as key=value pairs; records below Warn are dropped. Set BuildContext.Logger to collect the messages, for
+// example in tests, or to route them elsewhere. Errors that should abort the
+// build are returned from [Plugin.Build] instead of logged.
+//
 // # Artifacts
 //
 // [BuildArtifacts] holds the following artifacts:

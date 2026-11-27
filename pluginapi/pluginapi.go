@@ -5,6 +5,8 @@
 package pluginapi
 
 import (
+	"log/slog"
+
 	"typefox.dev/fastbelt/internal/artifacts/astinit"
 	"typefox.dev/fastbelt/pluginapi/ast"
 	"typefox.dev/fastbelt/pluginapi/tokens"
@@ -51,6 +53,9 @@ type BuildArtifacts struct {
 	// declaration order (Types[i].Declaration == Grammar.Interfaces[i]),
 	// which is also the order of the generated Go interfaces.
 	Types []*types.Type
+	// Logger receives the warnings of plugins. It is never nil. See the
+	// "Logging" section of the package documentation.
+	Logger *slog.Logger
 
 	// tokenDeclarations backs TokenDeclaration. It is set by the build
 	// through internal/artifacts/astinit.
