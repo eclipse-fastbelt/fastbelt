@@ -2,7 +2,7 @@
 // This program and the accompanying materials are made available under the
 // terms of the MIT License, which is available in the project root.
 
-package generator
+package textmate
 
 import (
 	"testing"
@@ -54,7 +54,7 @@ func TestToOniguruma(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ToOniguruma(tt.pattern)
+			got, err := toOniguruma(tt.pattern)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
@@ -62,7 +62,7 @@ func TestToOniguruma(t *testing.T) {
 }
 
 func TestToOnigurumaInvalid(t *testing.T) {
-	_, err := ToOniguruma(`(`)
+	_, err := toOniguruma(`(`)
 	require.Error(t, err)
 }
 
@@ -70,59 +70,59 @@ func TestSplitDelimiters(t *testing.T) {
 	tests := []struct {
 		name    string
 		pattern string
-		want    []Delimiters
+		want    []delimiters
 	}{
-		{"line comment", `//[^\n\r]*`, []Delimiters{
+		{"line comment", `//[^\n\r]*`, []delimiters{
 			{Begin: `//`, HasBody: true},
 		}},
-		{"shell comment", `#[^\n\r]*`, []Delimiters{
+		{"shell comment", `#[^\n\r]*`, []delimiters{
 			{Begin: `#`, HasBody: true},
 		}},
-		{"block comment", `/\*[\s\S]*?\*/`, []Delimiters{
+		{"block comment", `/\*[\s\S]*?\*/`, []delimiters{
 			{Begin: `/\*`, End: `\*/`, HasBody: true},
 		}},
-		{"combined comments in source order", `/\*[\s\S]*?\*/|//[^\n\r]*`, []Delimiters{
+		{"combined comments in source order", `/\*[\s\S]*?\*/|//[^\n\r]*`, []delimiters{
 			{Begin: `/\*`, End: `\*/`, HasBody: true},
 			{Begin: `//`, HasBody: true},
 		}},
-		{"string with escapes", `"([^"\\]|\\.)*"`, []Delimiters{
+		{"string with escapes", `"([^"\\]|\\.)*"`, []delimiters{
 			{Begin: `"`, End: `"`, HasBody: true},
 		}},
-		{"two string styles", `"[^"]*"|'[^']*'`, []Delimiters{
+		{"two string styles", `"[^"]*"|'[^']*'`, []delimiters{
 			{Begin: `"`, End: `"`, HasBody: true},
 			{Begin: `'`, End: `'`, HasBody: true},
 		}},
-		{"optional part is variable", `ab?c*d`, []Delimiters{
+		{"optional part is variable", `ab?c*d`, []delimiters{
 			{Begin: `a`, End: `d`, HasBody: true},
 		}},
-		{"plus keeps leading rune", `a+b`, []Delimiters{
+		{"plus keeps leading rune", `a+b`, []delimiters{
 			{Begin: `a`, End: `b`, HasBody: true},
 		}},
-		{"anchors do not panic", `^#.*`, []Delimiters{
+		{"anchors do not panic", `^#.*`, []delimiters{
 			{Begin: `\A#`, HasBody: true},
 		}},
-		{"fixed token", `->`, []Delimiters{
+		{"fixed token", `->`, []delimiters{
 			{Begin: `->`},
 		}},
-		{"fixed token with assertion", `\bfoo`, []Delimiters{
+		{"fixed token with assertion", `\bfoo`, []delimiters{
 			{Begin: `\bfoo`},
 		}},
-		{"no literal delimiters", `[a-z]+`, []Delimiters{
+		{"no literal delimiters", `[a-z]+`, []delimiters{
 			{HasBody: true},
 		}},
-		{"assertions alone are no delimiters", `\b[a-z]+\b`, []Delimiters{
+		{"assertions alone are no delimiters", `\b[a-z]+\b`, []delimiters{
 			{HasBody: true},
 		}},
-		{"case-insensitive begin", `(?i)rem[^\n]*`, []Delimiters{
+		{"case-insensitive begin", `(?i)rem[^\n]*`, []delimiters{
 			{Begin: `(?i:REM)`, HasBody: true},
 		}},
-		{"duplicates are removed", `ax*|ay*`, []Delimiters{
+		{"duplicates are removed", `ax*|ay*`, []delimiters{
 			{Begin: `a`, HasBody: true},
 		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := SplitDelimiters(tt.pattern)
+			got, err := splitDelimiters(tt.pattern)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
@@ -130,9 +130,9 @@ func TestSplitDelimiters(t *testing.T) {
 }
 
 func TestSplitDelimitersErrors(t *testing.T) {
-	_, err := SplitDelimiters(`(`)
+	_, err := splitDelimiters(`(`)
 	require.Error(t, err)
 
-	_, err = SplitDelimiters(`(?:aa|bb)(?:cc|dd)(?:ee|ff)(?:gg|hh)(?:ii|jj)(?:kk|ll)`)
-	require.ErrorIs(t, err, ErrTooManyAlternatives)
+	_, err = splitDelimiters(`(?:aa|bb)(?:cc|dd)(?:ee|ff)(?:gg|hh)(?:ii|jj)(?:kk|ll)`)
+	require.ErrorIs(t, err, errTooManyAlternatives)
 }
