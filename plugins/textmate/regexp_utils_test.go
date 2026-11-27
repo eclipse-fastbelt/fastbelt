@@ -5,6 +5,8 @@
 package textmate
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -45,7 +47,8 @@ func TestToOniguruma(t *testing.T) {
 		{"alternation", `ab|cd`, `ab|cd`},
 		{"alternation in concat", `(?:ab|cd)e`, `(?:ab|cd)e`},
 		{"word boundaries", `\bfoo\b`, `\bfoo\b`},
-		{"text anchors", `^a$`, `\Aa\z`},
+		{"text anchors become line anchors", `^a$`, `^a$`},
+		{"explicit text anchors become line anchors", `\Aa\z`, `^a$`},
 		{"line anchors", `(?m)^a$`, `^a$`},
 		{"control characters", `\x00\t\n\x7f`, `\x{0}\t\n\x{7f}`},
 		{"non-ASCII", `ü€`, `ü€`},
@@ -57,6 +60,42 @@ func TestToOniguruma(t *testing.T) {
 			got, err := toOniguruma(tt.pattern)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// matchLines simulates how vscode-textmate applies an Oniguruma regex: one
+// line at a time, each including its trailing "\n". Oniguruma's ^ and $ always
+// match at line boundaries, like Go's ^ and $ in multi-line mode. It returns
+// the first match per line, or "" if there is none.
+func matchLines(t *testing.T, oniguruma, document string) []string {
+	t.Helper()
+	re := regexp.MustCompile("(?m)" + oniguruma)
+	var result []string
+	for _, line := range strings.SplitAfter(document, "\n") {
+		if line != "" {
+			result = append(result, re.FindString(line))
+		}
+	}
+	return result
+}
+
+func TestToOnigurumaAnchorsMatchPerLine(t *testing.T) {
+	document := "a = 1 // first\n# second\nb // third\n"
+	tests := []struct {
+		name    string
+		pattern string
+		want    []string
+	}{
+		{"anchored line comment", `//[^\n]*$`, []string{"// first", "", "// third"}},
+		{"line comment with explicit end of text", `//[^\n]*\z`, []string{"// first", "", "// third"}},
+		{"comment at line start", `^#.*`, []string{"", "# second", ""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oniguruma, err := toOniguruma(tt.pattern)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, matchLines(t, oniguruma, document))
 		})
 	}
 }
@@ -98,8 +137,11 @@ func TestSplitDelimiters(t *testing.T) {
 		{"plus keeps leading rune", `a+b`, []delimiters{
 			{Begin: `a`, End: `b`, HasBody: true},
 		}},
-		{"anchors do not panic", `^#.*`, []delimiters{
-			{Begin: `\A#`, HasBody: true},
+		{"leading anchor is part of begin", `^#.*`, []delimiters{
+			{Begin: `^#`, HasBody: true},
+		}},
+		{"trailing anchor alone is no end", `//[^\n]*$`, []delimiters{
+			{Begin: `//`, HasBody: true},
 		}},
 		{"fixed token", `->`, []delimiters{
 			{Begin: `->`},

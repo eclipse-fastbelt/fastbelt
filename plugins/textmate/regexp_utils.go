@@ -19,6 +19,8 @@ import (
 // Oniguruma engine (vscode-oniguruma in VS Code). The functions in this file
 // translate between the two by re-emitting the parsed syntax tree, so that
 // flags like (?i), (?s), (?m) and (?U) are already resolved by the Go parser.
+// Text anchors (\A, \z, and ^, $ without (?m)) become line anchors, because
+// TextMate matches one line at a time.
 
 // toOniguruma converts a Go regex (without the surrounding slashes) into an
 // equivalent Oniguruma regex for use in a TextMate grammar.
@@ -263,14 +265,14 @@ func writeOniguruma(sb *strings.Builder, re *syntax.Regexp) {
 		sb.WriteString(".")
 	case syntax.OpAnyChar:
 		sb.WriteString(`[\s\S]`)
-	case syntax.OpBeginLine:
+	// TextMate matches one line at a time, so text anchors become line anchors:
+	// \A would only match on the first line of a document, and \z never
+	// matches before the trailing "\n" of a line. The WasDollar flag, which
+	// tells $ from \z, is deliberately ignored.
+	case syntax.OpBeginLine, syntax.OpBeginText:
 		sb.WriteString("^")
-	case syntax.OpEndLine:
+	case syntax.OpEndLine, syntax.OpEndText:
 		sb.WriteString("$")
-	case syntax.OpBeginText:
-		sb.WriteString(`\A`)
-	case syntax.OpEndText:
-		sb.WriteString(`\z`)
 	case syntax.OpWordBoundary:
 		sb.WriteString(`\b`)
 	case syntax.OpNoWordBoundary:

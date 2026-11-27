@@ -158,6 +158,20 @@ func TestTextMateCommonCommentWithLineAndBlockAlternatives(t *testing.T) {
 	}}, tm.Repository["token_COMMENT_comment"])
 }
 
+func TestTextMateCommonAnchoredComments(t *testing.T) {
+	tt := newTokenTypes()
+	ms := modes("default")
+	ms[0].Members = []*tokens.TokenModeMember{
+		member(tt.regexp("ID", `[a-z]+`, tokens.ModifierNone), tokens.ModifierNone),
+		member(tt.regexp("SL_COMMENT", `//[^\n]*$`, tokens.ModifierComment), tokens.ModifierComment),
+		member(tt.regexp("PREPROC", `^#[^\n]*`, tokens.ModifierComment), tokens.ModifierComment),
+	}
+	tm, _, _ := generateCommonFor(t, ms, nil)
+
+	require.Equal(t, tmPattern{Name: "comment.line.test", Match: `//[^\n]*$`}, tm.Repository["token_SL_COMMENT_comment"])
+	require.Equal(t, tmPattern{Name: "comment.line.test", Match: `^#[^\n]*`}, tm.Repository["token_PREPROC_comment"])
+}
+
 func TestTextMateCommonOverrides(t *testing.T) {
 	tt := newTokenTypes()
 	ms := modes("default")

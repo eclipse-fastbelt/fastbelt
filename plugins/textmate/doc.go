@@ -122,6 +122,8 @@
 //
 //   - Regular expressions are converted from Go syntax to the Oniguruma
 //     syntax used by TextMate, with flags such as (?s) and (?m) resolved.
+//     The anchors ^, $, \A and \z match at the start and end of a line, not
+//     of the document. (The lexer does not support anchors yet.)
 //   - All keywords of a token mode form one rule, longest keyword first, with
 //     word boundaries only where a keyword starts or ends with a word
 //     character. So "if" does not highlight the start of "iffy", and ":="
