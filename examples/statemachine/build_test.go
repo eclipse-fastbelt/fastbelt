@@ -118,7 +118,7 @@ func (f *syncFixture) requireBuilt(uri lsp.DocumentURI) {
 
 func TestBurstOfEditsEndsWithBuiltDocument(t *testing.T) {
 	f := newSyncFixture(t)
-	uri := lsp.DocumentURI("file:///test/example.statemachine")
+	uri := "file:///test/example.statemachine"
 	f.open(uri, "")
 	const edits = 200
 	for version := int32(2); version <= edits+1; version++ {
@@ -131,8 +131,8 @@ func TestBurstOfEditsEndsWithBuiltDocument(t *testing.T) {
 // document. Acquiring the write lock cancels the running build and resets the
 // workspace floor, so such a write must still finish the build.
 func TestWriteWithoutChangeKeepsWorkspaceBuilt(t *testing.T) {
-	uri := lsp.DocumentURI("file:///test/example.statemachine")
-	other := lsp.DocumentURI("file:///test/other.statemachine")
+	uri := "file:///test/example.statemachine"
+	other := "file:///test/other.statemachine"
 	tests := []struct {
 		name  string
 		write func(f *syncFixture)

@@ -181,7 +181,7 @@ func parseAndMerge(files []string) (grammar.Grammar, error) {
 		if err != nil {
 			return nil, err
 		}
-		file := textdoc.NewFile(lsp.URIFromPath(path), "fb", 0, string(text))
+		file := textdoc.NewFile(core.FileURI(path).DocumentURI(), "fb", 0, string(text))
 		doc := core.NewDocument(file)
 		documents.Set(doc)
 		docs = append(docs, doc)
@@ -214,7 +214,7 @@ func parseAndMerge(files []string) (grammar.Grammar, error) {
 // so container-based lookups in the generator span all files.
 func mergeGrammars(grammars []grammar.Grammar) grammar.Grammar {
 	merged := grammar.AggregateGrammar(grammars)
-	file := textdoc.NewFile(lsp.URIFromPath("merged.fb"), "fb", 0, "")
+	file := textdoc.NewFile(core.FileURI("merged.fb").DocumentURI(), "fb", 0, "")
 	doc := core.NewDocument(file)
 	doc.Root = merged
 	core.AssignContainers(doc)
