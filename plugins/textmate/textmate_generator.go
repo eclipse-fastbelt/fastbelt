@@ -74,7 +74,7 @@ type tmCaptures = map[string]tmPattern
 func generateCommon(artifacts pluginapi.BuildArtifacts, overrides map[string]string) (string, error) {
 	g := &textMateGenerator{
 		model:      buildTextMateModel(artifacts.TokenModes, artifacts.Languages),
-		scopes:     textMateScopes{Grammar: strings.ToLower(artifacts.Grammar.Name), Overrides: overrides},
+		scopes:     textMateScopes{Grammar: lowerGrammarName(artifacts.Grammar.Name), Overrides: overrides},
 		repository: tmRepository{},
 		logger:     artifacts.Logger,
 	}

@@ -54,5 +54,11 @@ func LanguageScopeName(languageID string) string {
 // Fastbelt grammar: source.<grammar>-common, with the grammar name in lower
 // case.
 func CommonScopeName(grammarName string) string {
-	return "source." + strings.ToLower(grammarName) + "-common"
+	return "source." + lowerGrammarName(grammarName) + "-common"
+}
+
+// lowerGrammarName returns the grammar name as used in TextMate scope names:
+// in lower case.
+func lowerGrammarName(grammarName string) string {
+	return strings.ToLower(grammarName)
 }
