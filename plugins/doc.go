@@ -15,5 +15,8 @@
 // generator internals. See the pluginapi package documentation for how to
 // write a plugin.
 //
-// There are no plugins yet.
+// The plugins are:
+//
+//   - [typefox.dev/fastbelt/plugins/textmate]: TextMate grammars for syntax
+//     highlighting
 package plugins
