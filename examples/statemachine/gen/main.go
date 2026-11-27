@@ -10,6 +10,8 @@ import (
 	"log"
 
 	"typefox.dev/fastbelt/cmd"
+	"typefox.dev/fastbelt/pluginapi"
+	"typefox.dev/fastbelt/plugins/textmate"
 )
 
 func main() {
@@ -21,9 +23,15 @@ func main() {
 				Patterns:   []string{"**/*.statemachine"},
 			},
 		},
-		TextMateOutput: "../../internal/vscode-extensions/statemachine/syntaxes",
-		ATN:            true,
-		Verbose:        true,
+		Plugins: []pluginapi.Plugin{textmate.New(textmate.Options{
+			// Paths are relative to the output directory, which is this example.
+			CommonFile: "../../internal/vscode-extensions/statemachine/syntaxes/statemachinemodel-common.tmLanguage.json",
+			LanguageFiles: map[string]string{
+				"statemachine": "../../internal/vscode-extensions/statemachine/syntaxes/statemachine.tmLanguage.json",
+			},
+		})},
+		ATN:     true,
+		Verbose: true,
 	}
 	if err := ctx.Build(); err != nil {
 		log.Fatalf("statemachine generation failed: %v", err)

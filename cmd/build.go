@@ -75,27 +75,14 @@ type BuildContext struct {
 	// Logger receives the warnings of plugins as [pluginapi.BuildArtifacts.Logger].
 	// If nil, a default logger writes them to stderr.
 	Logger *slog.Logger
-	// TextMateOutput is the directory for the generated TextMate grammars, used for
-	// syntax highlighting in editors like VS Code. If empty, no TextMate grammars
-	// are generated. Otherwise it gets <grammar>-common.tmLanguage.json with the
-	// rules of all languages, and one <languageID>.tmLanguage.json per language.
-	TextMateOutput string
-	// TextMateScopes overrides the TextMate scopes that are derived from the token
-	// names and modifiers. It maps a token name to a scope without the grammar
-	// suffix, e.g. "ID" to "variable.other". An empty scope removes the scope.
-	// Keywords without a token declaration are named like the generated
-	// Keyword_* constants without the prefix, e.g. "Semicolon" for ";".
-	TextMateScopes map[string]string
 }
 
 // GenerateOptions are the optional outputs and settings of [Generate].
 type GenerateOptions struct {
-	// ATN, Railroad, Verbose, TextMateOutput and TextMateScopes are as in [BuildContext].
-	ATN            bool
-	Railroad       bool
-	Verbose        bool
-	TextMateOutput string
-	TextMateScopes map[string]string
+	// ATN, Railroad and Verbose are as in [BuildContext].
+	ATN      bool
+	Railroad bool
+	Verbose  bool
 }
 
 // Build performs the code generation step for the fastbelt build process.
@@ -136,10 +123,6 @@ func (c *BuildContext) Build() error {
 			return fmt.Errorf("language id %q is used by more than one language", lang.LanguageID)
 		}
 		languageIDs[lang.LanguageID] = true
-		// The TextMate grammar of a language is written to <languageID>.tmLanguage.json.
-		if c.TextMateOutput != "" && strings.ContainsAny(lang.LanguageID, `/\`) {
-			return fmt.Errorf("language id %q cannot be used as a TextMate file name", lang.LanguageID)
-		}
 		// The parser dispatches and the lexer names its modes per entry rule,
 		// so two languages cannot share one. Give one language several
 		// patterns instead.
@@ -199,19 +182,7 @@ func (c *BuildContext) Build() error {
 	if pkg == "" {
 		pkg = filepath.Base(out)
 	}
-	opts := GenerateOptions{ATN: c.ATN, Railroad: c.Railroad, Verbose: c.Verbose, TextMateScopes: c.TextMateScopes}
-	if c.TextMateOutput != "" {
-		opts.TextMateOutput, err = filepath.Abs(c.TextMateOutput)
-		if err != nil {
-			return err
-		}
-		commonFile := generator.TextMateCommonFileName(g)
-		for _, lang := range c.Languages {
-			if generator.TextMateLanguageFileName(lang.LanguageID) == commonFile {
-				return fmt.Errorf("language id %q clashes with the common TextMate grammar %s", lang.LanguageID, commonFile)
-			}
-		}
-	}
+	opts := GenerateOptions{ATN: c.ATN, Railroad: c.Railroad, Verbose: c.Verbose}
 	gen, err := generate(g, entries, entryModes, selectors, out, pkg, opts)
 	if err != nil {
 		return err
@@ -484,7 +455,7 @@ func reportDiagnostics(docs []*core.Document) error {
 // index-aligned to the configured languages; a nil entryModes or empty name
 // means the default mode); with a single entry the output matches the
 // single-language CLI. selectors are index-aligned to entries as well; they
-// are required for TextMate grammars (see [GenerateOptions]).
+// configure the language selector of the generated services.
 func Generate(g grammar.Grammar, entries []grammar.ParserRule, entryModes []string, selectors []generator.Selector, outDir, pkg string, opts GenerateOptions) error {
 	_, err := generate(g, entries, entryModes, selectors, outDir, pkg, opts)
 	return err
@@ -508,8 +479,8 @@ func generate(g grammar.Grammar, entries []grammar.ParserRule, entryModes []stri
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return nil, err
 	}
-	writeTo := func(dir, name, file, content string) error {
-		path := filepath.Join(dir, file)
+	write := func(name, file, content string) error {
+		path := filepath.Join(outDir, file)
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			return fmt.Errorf("failed to write %s: %w", name, err)
 		}
@@ -517,9 +488,6 @@ func generate(g grammar.Grammar, entries []grammar.ParserRule, entryModes []stri
 			fmt.Printf("Written: %s\n", path)
 		}
 		return nil
-	}
-	write := func(name, file, content string) error {
-		return writeTo(outDir, name, file, content)
 	}
 
 	// Desugar infix rules once, so every generator below sees the synthesized
@@ -567,11 +535,6 @@ func generate(g grammar.Grammar, entries []grammar.ParserRule, entryModes []stri
 			return nil, err
 		}
 	}
-	if opts.TextMateOutput != "" {
-		if err := generateTextMate(g, entries, entryModes, selectors, tokenTypes, opts, writeTo); err != nil {
-			return nil, err
-		}
-	}
 	return &generation{
 		grammar:    g,
 		entries:    entries,
@@ -580,36 +543,4 @@ func generate(g grammar.Grammar, entries []grammar.ParserRule, entryModes []stri
 		outDir:     outDir,
 		pkg:        pkg,
 	}, nil
-}
-
-// generateTextMate writes the common TextMate grammar and one grammar per language.
-func generateTextMate(g grammar.Grammar, entries []grammar.ParserRule, entryModes []string, selectors []generator.Selector,
-	tokenTypes generator.GenerateTokenTypesResult, opts GenerateOptions, writeTo func(dir, name, file, content string) error) error {
-	if len(selectors) != len(entries) {
-		return fmt.Errorf("TextMate grammars need a language selector per entry rule")
-	}
-	if err := os.MkdirAll(opts.TextMateOutput, 0755); err != nil {
-		return err
-	}
-	common, err := generator.GenerateTextMateCommon(g, entries, entryModes, tokenTypes, opts.TextMateScopes)
-	if err != nil {
-		return err
-	}
-	for _, warning := range common.Warnings {
-		fmt.Printf("Warning: %s\n", warning)
-	}
-	if err := writeTo(opts.TextMateOutput, "textmate", generator.TextMateCommonFileName(g), common.Content); err != nil {
-		return err
-	}
-	for i, entry := range entries {
-		content, err := generator.GenerateTextMateLanguage(g, entry.Name(), selectors[i])
-		if err != nil {
-			return err
-		}
-		if err := writeTo(opts.TextMateOutput, "textmate-"+selectors[i].LanguageID,
-			generator.TextMateLanguageFileName(selectors[i].LanguageID), content); err != nil {
-			return err
-		}
-	}
-	return nil
 }

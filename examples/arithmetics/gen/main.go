@@ -10,6 +10,8 @@ import (
 	"log"
 
 	"typefox.dev/fastbelt/cmd"
+	"typefox.dev/fastbelt/pluginapi"
+	"typefox.dev/fastbelt/plugins/textmate"
 )
 
 func main() {
@@ -21,11 +23,17 @@ func main() {
 				Patterns:   []string{"**/*.calc"},
 			},
 		},
-		TextMateOutput: "../../internal/vscode-extensions/arithmetics/syntaxes",
-		TextMateScopes: map[string]string{
-			// SL_COMMENT is hidden, so it only gets a scope through an override.
-			"SL_COMMENT": "comment.line",
-		},
+		Plugins: []pluginapi.Plugin{textmate.New(textmate.Options{
+			// Paths are relative to the output directory, which is this example.
+			CommonFile: "../../internal/vscode-extensions/arithmetics/syntaxes/arithmetics-common.tmLanguage.json",
+			LanguageFiles: map[string]string{
+				"arithmetics": "../../internal/vscode-extensions/arithmetics/syntaxes/arithmetics.tmLanguage.json",
+			},
+			Scopes: map[string]string{
+				// SL_COMMENT is hidden, so it only gets a scope through an override.
+				"SL_COMMENT": "comment.line",
+			},
+		})},
 		Verbose: true,
 	}
 	if err := ctx.Build(); err != nil {
